@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-15T17:25:24+00:00",
+  "dp_rules_fp": "47c403568aa3",
+  "reference_rules_fp": "85d75db127d5",
+  "reference_source": "4~8덱 S17 DAS 표준 기본전략표 (공표된 total-dependent 해)",
+  "tie_delta": 0.005,
+  "n_cells": 360,
+  "n_mismatch": 2,
+  "entries": [
+    {
+      "cell": "A,2",
+      "dealer": 5,
+      "dp": "H",
+      "ref": "D",
+      "dp_delta": 0.007408,
+      "cause": "deck_model"
+    },
+    {
+      "cell": "A,4",
+      "dealer": 4,
+      "dp": "H",
+      "ref": "D",
+      "dp_delta": 0.000859,
+      "cause": "statistical_tie"
+    }
+  ]
+}
