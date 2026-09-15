@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "target_ev": -0.01,
+  "dp_optimal_ev": -0.005108410191911581,
+  "rules_fp": "47c403568aa3",
+  "baselines": [
+    {
+      "name": "DP 최적(상한)",
+      "ev": -0.005108410191911581
+    },
+    {
+      "name": "딜러 모방",
+      "ev": -0.05674630158406916
+    },
+    {
+      "name": "항상 스탠드",
+      "ev": -0.16037656445774537
+    },
+    {
+      "name": "무작위(합법 균등)",
+      "ev": -0.46023453347475235
+    }
+  ],
+  "runs": [
+    {
+      "path": "C:\\Users\\ion01\\OneDrive\\바탕 화면\\개발\\지우 과제\\Blackjack\\artifacts\\mc_natural__47c403568aa3__f88e23a45510__seed42.npz",
+      "name": "mc_natural",
+      "algo": "mc",
+      "seed": 42,
+      "n_episodes": 200000,
+      "final_ev": -0.03289700299501419,
+      "episodes_to_target": null,
+      "wall_sec": 10.557895400001144
+    }
+  ],
+  "groups": [
+    {
+      "name": "mc_natural",
+      "algo": "mc",
+      "n_seeds": 1,
+      "final_ev_mean": -0.03289700299501419,
+      "final_ev_std": null,
+      "episodes_to_target": null,
+      "n_reached": 0,
+      "wall_sec_mean": 10.557895400001144,
+      "n_episodes": 200000,
+      "n_params": 1680,
+      "q_bytes": 270336
+    }
+  ]
+}
