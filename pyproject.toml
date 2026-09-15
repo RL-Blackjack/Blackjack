@@ -1,0 +1,9 @@
+# 패키지 설치(pip install -e .)는 하지 않는다.
+# 왜: pythonpath 설정 한 줄이면 pytest가 src/를 찾는다.
+#     학생이 코드를 고칠 때마다 재설치를 신경 쓸 필요가 없다.
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = [
+    "slow: 수동 실행 전용. 수 분 이상 걸리는 테스트",
+]

@@ -1,0 +1,6 @@
+# W1~W3 범위에서 실제로 쓰는 것만 적는다.
+# 왜: plotly/matplotlib/streamlit/torch는 W4 이후에 필요해지므로,
+#     지금 넣으면 "이 파일 왜 있나"에 답할 수 없는 의존성이 된다.
+numpy==2.4.3
+pandas==3.0.1
+pytest==9.0.2
