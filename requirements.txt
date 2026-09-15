@@ -1,6 +1,10 @@
-# W1~W3 범위에서 실제로 쓰는 것만 적는다.
-# 왜: plotly/matplotlib/streamlit/torch는 W4 이후에 필요해지므로,
+# W1~W6 범위에서 실제로 쓰는 것만 적는다.
+# 왜: plotly/streamlit/torch는 W7 이후(웹앱·DQN)에 필요해지므로,
 #     지금 넣으면 "이 파일 왜 있나"에 답할 수 없는 의존성이 된다.
 numpy==2.4.3
 pandas==3.0.1
 pytest==9.0.2
+# W4 시각화: 정적 PNG와 GIF 전용. pillow는 matplotlib의 PillowWriter가 쓴다.
+# 왜: 파이썬 3.14.0 venv에 실제로 설치되는 cp314 휠 버전을 확인해 그대로 박았다.
+matplotlib==3.11.2
+pillow==12.3.0
