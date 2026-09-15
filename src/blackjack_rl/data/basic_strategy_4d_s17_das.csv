@@ -1,0 +1,57 @@
+# name=출판 기본전략표 (4~8덱, S17, DAS, 서렌더 없음)
+# schema_version=1
+# source=4~8덱 S17 DAS 표준 기본전략표 (공표된 total-dependent 해)
+# rule.deck_mode=shoe
+# rule.decks=4
+# rule.dealer_hits_soft_17=False
+# rule.blackjack_payout=1.5
+# rule.dealer_peeks=True
+# rule.double_any_two=True
+# rule.double_after_split=True
+# rule.max_split_depth=3
+# rule.max_hands_per_round=4
+# rule.split_aces_one_card=True
+# rule.resplit_aces=False
+# rule.surrender=False
+# rule.insurance=False
+# notation=H 히트 / S 스탠드 / D 더블(아니면 히트) / Ds 더블(아니면 스탠드) / Y 스플릿 / N 스플릿 안 함
+# dealer_11_means=A
+# row_order=chartspec.CHART_ROWS (하드 5~21, 소프트 A,2~A,10, 페어 A,A 다음 2,2~10,10)
+# rules_fingerprint=85d75db127d5
+row,2,3,4,5,6,7,8,9,10,11
+"5",H,H,H,H,H,H,H,H,H,H
+"6",H,H,H,H,H,H,H,H,H,H
+"7",H,H,H,H,H,H,H,H,H,H
+"8",H,H,H,H,H,H,H,H,H,H
+"9",H,D,D,D,D,H,H,H,H,H
+"10",D,D,D,D,D,D,D,D,H,H
+"11",D,D,D,D,D,D,D,D,D,H
+"12",H,H,S,S,S,H,H,H,H,H
+"13",S,S,S,S,S,H,H,H,H,H
+"14",S,S,S,S,S,H,H,H,H,H
+"15",S,S,S,S,S,H,H,H,H,H
+"16",S,S,S,S,S,H,H,H,H,H
+"17",S,S,S,S,S,S,S,S,S,S
+"18",S,S,S,S,S,S,S,S,S,S
+"19",S,S,S,S,S,S,S,S,S,S
+"20",S,S,S,S,S,S,S,S,S,S
+"21",S,S,S,S,S,S,S,S,S,S
+"A,2",H,H,H,D,D,H,H,H,H,H
+"A,3",H,H,H,D,D,H,H,H,H,H
+"A,4",H,H,D,D,D,H,H,H,H,H
+"A,5",H,H,D,D,D,H,H,H,H,H
+"A,6",H,D,D,D,D,H,H,H,H,H
+"A,7",S,Ds,Ds,Ds,Ds,S,S,H,H,H
+"A,8",S,S,S,S,S,S,S,S,S,S
+"A,9",S,S,S,S,S,S,S,S,S,S
+"A,10",S,S,S,S,S,S,S,S,S,S
+"A,A",Y,Y,Y,Y,Y,Y,Y,Y,Y,Y
+"2,2",Y,Y,Y,Y,Y,Y,N,N,N,N
+"3,3",Y,Y,Y,Y,Y,Y,N,N,N,N
+"4,4",N,N,N,Y,Y,N,N,N,N,N
+"5,5",N,N,N,N,N,N,N,N,N,N
+"6,6",Y,Y,Y,Y,Y,N,N,N,N,N
+"7,7",Y,Y,Y,Y,Y,Y,N,N,N,N
+"8,8",Y,Y,Y,Y,Y,Y,Y,Y,Y,Y
+"9,9",Y,Y,Y,Y,Y,N,Y,Y,N,N
+"10,10",N,N,N,N,N,N,N,N,N,N
