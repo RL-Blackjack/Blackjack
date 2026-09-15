@@ -1,0 +1,27 @@
+# ── 설계 문서 (저장소에 올리지 않음) ──
+docs/
+
+# ── 파이썬 ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# 가상환경
+.venv/
+venv/
+env/
+
+# ── 편집기 / OS ──
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# ── 산출물 ──
+# artifacts/*.npz 는 일부러 제외하지 않는다.
+# 스냅샷 전체가 1MB 미만이라 그냥 커밋하며, 그래야 Git LFS 없이
+# 웹앱(Streamlit Cloud)이 저장소에서 바로 읽어 쓸 수 있다.
+media/*.mp4
+media/*.mov
