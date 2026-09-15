@@ -7,8 +7,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+# 왜: pyproject의 pythonpath=["src"]는 pytest에만 적용된다. 스크립트를 맨손으로
+#     실행할 때도 패키지를 찾게 하려면 여기서 직접 넣어야 한다.
+#     Path를 쓰므로 반드시 `from pathlib import Path` 아래여야 한다.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import numpy as np
 
