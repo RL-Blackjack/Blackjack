@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "python": "3.14.0",
+  "numpy": "2.4.3",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "seed": 20260915,
+  "kernel_scope": "포함: 카드 뽑기, 소프트 에이스, 마스크, Q 조회, argmax, 궤적 기록, 딜러 플레이, 배당. 제외: 스플릿, 불변식 assert, 통계 누적.",
+  "measured": {
+    "n_rounds": 200000,
+    "mask_mode": "table_view",
+    "wall_sec": 0.7983824000002642,
+    "eps_per_sec": 250506.52419183316,
+    "n_decisions": 250048,
+    "decisions_per_round": 1.25024,
+    "us_per_decision": 3.1929165600215326,
+    "ev_per_round": -0.390335
+  },
+  "measured_build_array": {
+    "n_rounds": 200000,
+    "mask_mode": "build_array",
+    "wall_sec": 0.8742646000027889,
+    "eps_per_sec": 228763.694651896,
+    "n_decisions": 250048,
+    "decisions_per_round": 1.25024,
+    "us_per_decision": 3.4963870936891674,
+    "ev_per_round": -0.390335
+  },
+  "masks": {
+    "n_calls": 300000,
+    "table_view_ns": 109.56433333679645,
+    "build_array_ns": 328.5516666558882,
+    "call_speedup": 2.998710042308506,
+    "values_equal": true,
+    "round_speedup": 1.09504493085331
+  },
+  "budget": {
+    "planned_eps_per_sec": 20000.0,
+    "measured_eps_per_sec": 250506.52419183316,
+    "safety_factor": 2.0,
+    "safe_eps_per_sec": 125253.26209591658,
+    "planned_rows": [
+      {
+        "name": "MC / Q / DoubleQ (자연딜)",
+        "episodes": 30000000.0,
+        "rel_speed": 1.0,
+        "hours": 0.4166666666666667
+      },
+      {
+        "name": "2x2 스텝사이즈 추가분",
+        "episodes": 20000000.0,
+        "rel_speed": 1.0,
+        "hours": 0.2777777777777778
+      },
+      {
+        "name": "MC / Q (exploring, 헤드라인)",
+        "episodes": 60000000.0,
+        "rel_speed": 1.0,
+        "hours": 0.8333333333333334
+      },
+      {
+        "name": "S2 카운트 확장 (슈 모드)",
+        "episodes": 50000000.0,
+        "rel_speed": 0.6,
+        "hours": 1.1574074074074074
+      },
+      {
+        "name": "S2 플라시보 대조",
+        "episodes": 50000000.0,
+        "rel_speed": 0.6,
+        "hours": 1.1574074074074074
+      },
+      {
+        "name": "베팅 밴딧",
+        "episodes": 5000000.0,
+        "rel_speed": 0.85,
+        "hours": 0.08169934640522876
+      },
+      {
+        "name": "DQN (S1 스윕 3 + S1/S2 x 3시드)",
+        "episodes": 18000000.0,
+        "rel_speed": 0.08,
+        "hours": 3.125
+      },
+      {
+        "name": "평가 시뮬 (CRN, 근사갭)",
+        "episodes": 20000000.0,
+        "rel_speed": 0.28,
+        "hours": 0.9920634920634919
+      }
+    ],
+    "measured_rows": [
+      {
+        "name": "MC / Q / DoubleQ (자연딜)",
+        "episodes": 30000000.0,
+        "rel_speed": 1.0,
+        "hours": 0.03326593333334434
+      },
+      {
+        "name": "2x2 스텝사이즈 추가분",
+        "episodes": 20000000.0,
+        "rel_speed": 1.0,
+        "hours": 0.022177288888896227
+      },
+      {
+        "name": "MC / Q (exploring, 헤드라인)",
+        "episodes": 60000000.0,
+        "rel_speed": 1.0,
+        "hours": 0.06653186666668869
+      },
+      {
+        "name": "S2 카운트 확장 (슈 모드)",
+        "episodes": 50000000.0,
+        "rel_speed": 0.6,
+        "hours": 0.09240537037040095
+      },
+      {
+        "name": "S2 플라시보 대조",
+        "episodes": 50000000.0,
+        "rel_speed": 0.6,
+        "hours": 0.09240537037040095
+      },
+      {
+        "name": "베팅 밴딧",
+        "episodes": 5000000.0,
+        "rel_speed": 0.85,
+        "hours": 0.006522732026145949
+      },
+      {
+        "name": "DQN (S1 스윕 3 + S1/S2 x 3시드)",
+        "episodes": 18000000.0,
+        "rel_speed": 0.08,
+        "hours": 0.24949450000008255
+      },
+      {
+        "name": "평가 시뮬 (CRN, 근사갭)",
+        "episodes": 20000000.0,
+        "rel_speed": 0.28,
+        "hours": 0.07920460317462938
+      }
+    ],
+    "safe_rows": [
+      {
+        "name": "MC / Q / DoubleQ (자연딜)",
+        "episodes": 30000000.0,
+        "rel_speed": 1.0,
+        "hours": 0.06653186666668869
+      },
+      {
+        "name": "2x2 스텝사이즈 추가분",
+        "episodes": 20000000.0,
+        "rel_speed": 1.0,
+        "hours": 0.044354577777792455
+      },
+      {
+        "name": "MC / Q (exploring, 헤드라인)",
+        "episodes": 60000000.0,
+        "rel_speed": 1.0,
+        "hours": 0.13306373333337737
+      },
+      {
+        "name": "S2 카운트 확장 (슈 모드)",
+        "episodes": 50000000.0,
+        "rel_speed": 0.6,
+        "hours": 0.1848107407408019
+      },
+      {
+        "name": "S2 플라시보 대조",
+        "episodes": 50000000.0,
+        "rel_speed": 0.6,
+        "hours": 0.1848107407408019
+      },
+      {
+        "name": "베팅 밴딧",
+        "episodes": 5000000.0,
+        "rel_speed": 0.85,
+        "hours": 0.013045464052291898
+      },
+      {
+        "name": "DQN (S1 스윕 3 + S1/S2 x 3시드)",
+        "episodes": 18000000.0,
+        "rel_speed": 0.08,
+        "hours": 0.4989890000001651
+      },
+      {
+        "name": "평가 시뮬 (CRN, 근사갭)",
+        "episodes": 20000000.0,
+        "rel_speed": 0.28,
+        "hours": 0.15840920634925876
+      }
+    ],
+    "planned_total_hours": 8.041355431061314,
+    "measured_total_hours": 0.642007664830589,
+    "safe_total_hours": 1.284015329661178
+  }
+}
