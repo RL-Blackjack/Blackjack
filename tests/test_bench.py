@@ -82,10 +82,10 @@ def test_bench_json_스키마가_전부_채워진다(tmp_path):
 
     budget = loaded["budget"]
     assert budget["planned_eps_per_sec"] == 20_000.0
-    assert budget["safety_factor"] == 2.0
+    assert budget["safety_factor"] == 3.2   # 실제 env 79,145 eps/s vs 커널 250,507 eps/s
     assert len(budget["planned_rows"]) == len(budget["measured_rows"]) == 8
     assert budget["safe_total_hours"] == pytest.approx(
-        budget["measured_total_hours"] * 2.0)
+        budget["measured_total_hours"] * 3.2)
 
 
 def test_마크다운_출력에_세_개의_표가_들어있다():

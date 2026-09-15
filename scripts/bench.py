@@ -22,8 +22,10 @@ CARD_PROBS = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 4], dtype=np.float64) / 13.0
 PLANNED_EPS_PER_SEC = 20_000.0
 
 # 왜: 커널은 스플릿·불변식 검사·통계 누적을 생략했으므로 실제 env보다 빠르다.
-#     예산을 낙관적으로 잡아 일정이 붕괴하는 사고를 막으려고 2배 여유를 곱한다.
-KERNEL_SAFETY_FACTOR = 2.0
+#     처음에는 2.0으로 추정했으나, W2가 끝난 뒤 실제 BlackjackEnv.play_round를
+#     측정하니 79,145 라운드/초였다. 같은 PC에서 이 커널은 250,507 eps/s이므로
+#     실제 배율은 3.17이다. 추정 대신 실측값을 쓴다(2026-09-16 측정).
+KERNEL_SAFETY_FACTOR = 3.2
 
 KERNEL_SCOPE_NOTE = ("포함: 카드 뽑기, 소프트 에이스, 마스크, Q 조회, argmax, 궤적 기록, "
                      "딜러 플레이, 배당. 제외: 스플릿, 불변식 assert, 통계 누적.")
