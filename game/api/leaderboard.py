@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from blackjack_rl.rules import RULES_V1
 from game.db import get_session
-from game.leaderboard import cache, leaderboard
+from game.leaderboard import TOP_N, cached_leaderboard
 
 router = APIRouter(prefix="/api", tags=["leaderboard"])
 
@@ -34,14 +34,10 @@ class LeaderRowOut(BaseModel):
 @router.get("/leaderboard", response_model=list[LeaderRowOut])
 def read_leaderboard(
     session: Annotated[Session, Depends(get_session)],
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    # 왜 상한이 TOP_N인가: 캐시는 상위 TOP_N줄만 들고 있다. 그보다 크게 받으면
+    #   캐시를 잘라 줄 수 없다.
+    limit: Annotated[int, Query(ge=1, le=TOP_N)] = 20,
 ) -> list[LeaderRowOut]:
     """일치율 기준 순위표. 5분 동안 같은 결과를 돌려준다."""
-    지문 = RULES_V1.fingerprint()
-    키 = f"{지문}:{limit}"
-    담긴것 = cache.get(키)
-    if 담긴것 is None:
-        담긴것 = [LeaderRowOut(**vars(r))
-                for r in leaderboard(session, rules_fp=지문, limit=limit)]
-        cache.put(키, 담긴것)
-    return 담긴것
+    줄들 = cached_leaderboard(session, rules_fp=RULES_V1.fingerprint(), limit=limit)
+    return [LeaderRowOut(**vars(r)) for r in 줄들]
