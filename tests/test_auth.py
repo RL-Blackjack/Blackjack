@@ -128,3 +128,64 @@ def test_창이_지나면_다시_허용된다():
     제한.allow("1.1.1.1", now=0.0)
     assert 제한.allow("1.1.1.1", now=30.0) is False
     assert 제한.allow("1.1.1.1", now=61.0) is True
+
+
+def test_필수_클레임이_없는_토큰은_거부된다():
+    import jwt
+
+    from game.security import ALGORITHM, TokenInvalid, read_access_token
+    지금 = int(datetime.now(timezone.utc).timestamp())
+    온전 = {"sub": "42", "iat": 지금, "exp": 지금 + 600}
+    비밀 = get_settings().jwt_secret
+    assert read_access_token(jwt.encode(온전, 비밀, algorithm=ALGORITHM)) == 42
+    # 왜: exp가 없으면 영원히 유효한 토큰이 된다. 서버만 서명하지만 키가 한 번
+    #     새면 되돌릴 수 없으므로 세 클레임을 모두 요구한다.
+    for 뺄것 in ["exp", "sub", "iat"]:
+        빠짐 = {k: v for k, v in 온전.items() if k != 뺄것}
+        with pytest.raises(TokenInvalid):
+            read_access_token(jwt.encode(빠짐, 비밀, algorithm=ALGORITHM))
+
+
+def test_제한기는_빈_키를_지운다():
+    from game.security import RateLimiter
+    제한 = RateLimiter(limit=2, window_seconds=60.0)
+    for 번호 in range(100):
+        제한.allow(f"10.0.0.{번호}", now=0.0)
+    assert 제한.key_count() == 100
+    # 왜: IP를 바꿔 가며 한 번씩만 보내면 키가 영원히 남아 메모리가 계속 는다.
+    #     창이 지나 비어 버린 키는 다른 키의 요청 때 함께 지워져야 한다.
+    assert 제한.allow("10.0.1.1", now=61.0) is True
+    assert 제한.key_count() == 1
+
+
+def test_제한기는_여러_스레드에서_한도를_넘지_않는다(monkeypatch):
+    import threading
+    import time
+
+    from game import security
+    from game.security import RateLimiter
+
+    def 양보하는_len(값):
+        길이 = len(값)
+        time.sleep(0)
+        return 길이
+
+    # 왜 모듈의 len을 바꿔치는가: 확인(len)과 기록(append) 사이에서 스레드가
+    #     바뀌어야 경합이 드러난다. GIL 아래에서는 그 틈이 좁아 잠금이 없어도
+    #     통과해 버린다(실측 200회 중 0회 초과). 여기서 양보시키면 잠금 없는
+    #     구현은 매번 114~119회를 허용한다.
+    monkeypatch.setattr(security, "len", 양보하는_len, raising=False)
+    제한 = RateLimiter(limit=100, window_seconds=600.0)
+    출발 = threading.Barrier(20)
+    허용 = [0] * 20
+
+    def 일꾼(번호: int) -> None:
+        출발.wait()
+        허용[번호] = sum(제한.allow("1.2.3.4") for _ in range(10))
+
+    스레드들 = [threading.Thread(target=일꾼, args=(i,)) for i in range(20)]
+    for t in 스레드들:
+        t.start()
+    for t in 스레드들:
+        t.join()
+    assert sum(허용) == 100

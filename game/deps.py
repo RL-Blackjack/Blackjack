@@ -1,6 +1,6 @@
 """이 파일은 여러 라우터가 함께 쓰는 FastAPI 의존성을 모은다.
 입력: Authorization 헤더와 DB 세션.
-출력: 인증된 User, 그리고 로그인 요청 제한기.
+출력: 인증된 User, 그리고 로그인·가입 요청 제한기.
 """
 
 from __future__ import annotations
@@ -21,6 +21,14 @@ from game.security import RateLimiter, TokenInvalid, read_access_token
 #   값이므로 상수로 두고, 바꿀 일이 생기면 config.login_rate_per_minute와 함께 고친다.
 LOGIN_RATE_PER_MINUTE: int = 10
 login_limiter = RateLimiter(limit=LOGIN_RATE_PER_MINUTE, window_seconds=60.0)
+
+# 왜 가입에도 따로 거는가: 가입은 요청마다 argon2(약 30ms, 64MiB)를 치른다.
+#   제한이 없으면 한 발신지가 동시 100으로 퍼부어 health가 1.5초씩 밀렸다(실측).
+#   로그인과 키를 나눠 두어야 가입 시도가 로그인 한도를 갉아먹지 않는다.
+# 왜 5회인가: 사람이 1분에 계정을 다섯 개 넘게 만들 일은 없고, 5회면 같은 폭주가
+#   health 1.1ms로 묶였다(검증 I4-dos). 워커 1개 전제는 RateLimiter와 같다.
+SIGNUP_RATE_PER_MINUTE: int = 5
+signup_limiter = RateLimiter(limit=SIGNUP_RATE_PER_MINUTE, window_seconds=60.0)
 
 
 def current_user(

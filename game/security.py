@@ -1,4 +1,4 @@
-"""이 파일은 비밀번호 해싱, JWT 발급·검증, 로그인 요청 제한을 맡는다.
+"""이 파일은 비밀번호 해싱, JWT 발급·검증, 로그인·가입 요청 제한을 맡는다.
 입력: 평문 비밀번호, 사용자 번호, 토큰 문자열, 호출자 IP.
 출력: argon2 해시, JWT 문자열, 사용자 번호, 허용 여부.
 """
@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import threading
 import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
@@ -69,7 +70,10 @@ def make_access_token(user_id: int, *, now: datetime | None = None) -> str:
 def read_access_token(token: str) -> int:
     """토큰을 검증하고 사용자 번호를 꺼낸다. 문제가 있으면 TokenInvalid."""
     try:
-        페이로드 = jwt.decode(token, get_settings().jwt_secret, algorithms=[ALGORITHM])
+        # 왜 세 클레임을 요구하는가: PyJWT는 exp가 없으면 만료 검사를 건너뛴다.
+        #   지금은 서버만 서명하지만, 빠진 토큰을 받아 주면 영원히 유효해진다.
+        페이로드 = jwt.decode(token, get_settings().jwt_secret, algorithms=[ALGORITHM],
+                          options={"require": ["exp", "sub", "iat"]})
         return int(페이로드["sub"])
     except (jwt.InvalidTokenError, KeyError, TypeError, ValueError) as e:
         # 왜 사유를 응답에 담지 않는가: "만료됨"과 "서명 불일치"를 구분해 주면
@@ -93,22 +97,54 @@ def new_refresh_token() -> tuple[str, str]:
 class RateLimiter:
     """키(보통 IP)마다 시간 창 안의 요청 수를 센다. 프로세스 안에서만 유효하다."""
 
+    # 왜 프로세스 1개(워커 1개) 전제인가: 기록이 이 객체의 메모리에만 있다.
+    #   uvicorn 워커를 N개 띄우면 워커마다 따로 세어 한도가 N배가 된다.
+    #   여러 워커가 필요해지면 Redis 같은 공유 저장소로 옮겨야 한다.
+
     def __init__(self, limit: int, window_seconds: float) -> None:
         self.limit = limit
         self.window = window_seconds
         self._기록: dict[str, deque[float]] = {}
+        # 왜 잠금인가: 동기 핸들러는 스레드 풀에서 동시에 돈다. "세고 → 비교하고
+        #   → 기록하는" 사이에 다른 스레드가 끼면 한도를 넘겨 허용한다.
+        self._잠금 = threading.Lock()
+        self._마지막청소 = float("-inf")
 
     def allow(self, key: str, *, now: float | None = None) -> bool:
         """지금 요청을 허용할지 판단하고, 허용하면 센다."""
         시각 = now if now is not None else time.monotonic()
-        큐 = self._기록.setdefault(key, deque())
-        while 큐 and 시각 - 큐[0] >= self.window:
-            큐.popleft()
-        if len(큐) >= self.limit:
-            return False
-        큐.append(시각)
-        return True
+        with self._잠금:
+            self._빈키청소(시각)
+            큐 = self._기록.get(key, deque())
+            while 큐 and 시각 - 큐[0] >= self.window:
+                큐.popleft()
+            if len(큐) >= self.limit:
+                return False
+            큐.append(시각)
+            self._기록[key] = 큐
+            return True
+
+    def _빈키청소(self, 시각: float) -> None:
+        """창이 지나 비어 버린 키를 지운다. 창 하나에 한 번만 훑는다."""
+        # 왜 다른 키까지 훑는가: 자기 키만 정리하면 IP를 바꿔 한 번씩만 보내는
+        #   경우 키가 영원히 남아 메모리가 계속 는다.
+        # 왜 창마다 한 번인가: 요청마다 전체를 훑으면 키 수에 비례해 느려진다.
+        #   창 하나에 한 번이면 남는 키는 최근 두 창 안에 온 것뿐이다.
+        if 시각 - self._마지막청소 < self.window:
+            return
+        self._마지막청소 = 시각
+        지울것 = [키 for 키, 큐 in self._기록.items()
+               if not 큐 or 시각 - 큐[-1] >= self.window]
+        for 키 in 지울것:
+            del self._기록[키]
+
+    def key_count(self) -> int:
+        """지금 기억하고 있는 키 수. 메모리가 새지 않는지 확인할 때 쓴다."""
+        with self._잠금:
+            return len(self._기록)
 
     def reset(self) -> None:
         """전부 지운다. 테스트에서만 쓴다."""
-        self._기록.clear()
+        with self._잠금:
+            self._기록.clear()
+            self._마지막청소 = float("-inf")
