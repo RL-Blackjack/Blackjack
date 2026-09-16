@@ -49,6 +49,9 @@ class Pending:
     bet: float
     dealer_up: int
     player_cards: tuple[int, ...]
+    # 왜 키와 따로 두는가: RULES_V1은 키에서 깊이를 빼 key.split_depth가 늘 0이다.
+    #   DP 손실은 이 실제 깊이의 Q로 재고, decisions 6필드는 키 그대로 둔다.
+    split_depth: int
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,7 @@ class HandView:
     total: int
     bet: float
     result: float
+    split_depth: int      # 이 손의 실제 스플릿 깊이(표시·디버깅용)
 
 
 @dataclass(frozen=True)
@@ -159,6 +163,9 @@ def play(seed: int, actions: Sequence[int], *,
     남은 = list(actions)
     카드: dict[int, list[int]] = {}
     앞선: dict[int, tuple[int, int]] = {}
+    # 왜 깊이를 따로 세는가: 키는 규칙상 깊이를 빼므로 실제 깊이를 알려 주지 않는다.
+    #   코어처럼 손 0은 0, 갈라진 손 j의 자식 둘은 깊이[j] + 1이다.
+    깊이: dict[int, int] = {0: 0}
     다음자리 = [1]
 
     def act(key: StateKey, legal: np.ndarray, ctx) -> int:  # noqa: ANN001
@@ -192,6 +199,7 @@ def play(seed: int, actions: Sequence[int], *,
             for 자식 in (다음자리[0], 다음자리[0] + 1):
                 카드[자식] = [랭크]
                 앞선[자식] = _단일(랭크)
+                깊이[자식] = 깊이[자리] + 1
             다음자리[0] += 2
 
         return 고른것
@@ -207,6 +215,7 @@ def play(seed: int, actions: Sequence[int], *,
             bet=float(e.ctx.bet),
             dealer_up=int(e.key.dealer_up),
             player_cards=tuple(e.cards),
+            split_depth=깊이[int(e.ctx.hand_index)],
         )
 
     if 남은:
@@ -221,7 +230,8 @@ def play(seed: int, actions: Sequence[int], *,
             continue      # 갈라진 분기 노드는 자기 결과가 없다
         몫 = 복원[i]
         손들.append(HandView(cards=tuple(몫), total=_손합계(몫),
-                            bet=float(rec.bet), result=float(rec.result)))
+                            bet=float(rec.bet), result=float(rec.result),
+                            split_depth=깊이[i]))
 
     return Finished(
         dealer_up=int(결과.dealer_up),

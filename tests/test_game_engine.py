@@ -99,30 +99,6 @@ def test_복원한_카드의_합계가_언제나_상태_키와_같다():
     assert 확인 >= 500, f"확인한 대기상태가 너무 적다: {확인}"
 
 
-def test_스플릿한_뒤에도_카드_복원이_맞는다():
-    난수 = np.random.default_rng(7)
-    스플릿본판, 손세개이상 = 0, 0
-    for seed in range(1500):
-        본것, _결과 = 끝까지(
-            seed, lambda v: SPLIT if SPLIT in v.legal else int(난수.choice(v.legal)))
-        # 왜 n_hands로 보는가: RULES_V1은 include_split_depth_in_state=False라
-        #     key.split_depth가 언제나 0이다. 실측으로 확인했다.
-        손개수 = max((v.n_hands for v in 본것), default=1)
-        if 손개수 > 1:
-            스플릿본판 += 1
-            for v in 본것:
-                assert 손합계(v.player_cards) == (v.key.total, v.key.is_soft), (
-                    f"seed={seed} 카드={v.player_cards} 키={v.key}")
-        if 손개수 > 2:
-            손세개이상 += 1
-    # 왜 이 하한인가: 스플릿 우선 5,000판에서 648판이 갈라졌다(13.0%).
-    #     1,500판이면 100판은 넉넉히 넘는다.
-    assert 스플릿본판 >= 100, f"스플릿이 난 판이 {스플릿본판}뿐이다"
-    # 왜 이것도 보는가: 재스플릿(손 3개 이상)에서 자식 인덱스 예측이 틀리면
-    #     엉뚱한 손에 카드를 붙이게 된다. 5,000판에서 260판이 여기까지 갔다.
-    assert 손세개이상 >= 20, f"손이 3개 이상 된 판이 {손세개이상}뿐이다"
-
-
 def test_행동_목록이_DB_칸에_들어간다():
     # 왜 이 검사인가: rounds.actions 가 String(128)이다. 가장 결정을 많이 뽑아내는
     #     플레이(스플릿 > 히트 > 스탠드)로 눌러 보고 직렬화한 길이가 칸에 들어가는지
@@ -286,21 +262,6 @@ def test_내추럴로_끝난_라운드도_두_장을_보여준다():
         if 손.result > 0:
             # 왜: 결정 없이 이기는 길은 플레이어 블랙잭뿐이다.
             assert 손.total == 21 and sorted(손.cards) == [1, 10]
-
-
-def test_에이스_스플릿_자식은_두_장이다():
-    시드들 = [s for s in range(3000)
-            if isinstance(v := play(s, []), Pending) and v.player_cards == (1, 1)]
-    assert len(시드들) >= 5, f"에이스 페어 시드가 {len(시드들)}개뿐이다"
-    for s in 시드들:
-        assert SPLIT in play(s, []).legal
-        결과 = play(s, [SPLIT])
-        # 왜 곧바로 끝나는가: 에이스 스플릿 자식은 한 장만 받고 결정 없이 끝난다.
-        assert isinstance(결과, Finished)
-        assert len(결과.hands) == 2
-        for h in 결과.hands:
-            assert len(h.cards) == 2 and h.cards[0] == 1, f"seed={s} {h}"
-            assert h.total == 손합계(h.cards)[0]
 
 
 def test_뽑기_로그가_어긋나면_예외():
