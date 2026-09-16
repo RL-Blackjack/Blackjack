@@ -23,7 +23,7 @@ from blackjack_rl.rules import RULES_V1  # noqa: E402
 from blackjack_rl.state import REACHABLE_KEYS, legal_actions  # noqa: E402
 from game.db import make_engine  # noqa: E402
 from game.models import Base, ModelRegistry  # noqa: E402
-from game.serving import KEY_INDEX, ModelStore, ServedModel, model_action  # noqa: E402
+from game.serving import KEY_INDEX, ModelStore, ServedModel, file_sha256, model_action  # noqa: E402
 
 지금 = datetime.now(timezone.utc)
 
@@ -51,7 +51,7 @@ def 모델등록(세션, 폴더: Path, 이름: str, *, rules_fp: str = RULES_V1.
     if 깨짐:
         경로.write_bytes(b"\x00" * 100)     # npz가 아닌 쓰레기 바이트
     세션.add(ModelRegistry(name=이름, family="rl", rules_fp=rules_fp,
-                          artifact_path=경로.name, artifact_sha256="0" * 64,
+                          artifact_path=경로.name, artifact_sha256=file_sha256(경로),
                           exact_ev=-0.01, is_serving=True))
     세션.commit()
 
@@ -66,7 +66,7 @@ def test_정책이_고른_행동을_그대로_돌려준다():
     정책 = 더미정책(0)
     키 = REACHABLE_KEYS[0]
     정책[KEY_INDEX[키]] = 1      # HIT
-    모델 = ServedModel(id=1, name="t", family="rl", exact_ev=-0.01, policy=정책)
+    모델 = ServedModel(id=1, name="t", family="rl", exact_ev=-0.01, policy=정책, artifact_sha256="0" * 64)
     assert model_action(모델, 키, legal_actions(키)) == 1
 
 
@@ -75,7 +75,7 @@ def test_불법_행동을_고르면_합법으로_되돌아간다():
     #     자리에서 스플릿을 고를 수 있다. 그때 서버가 죽으면 안 된다.
     키 = next(k for k in REACHABLE_KEYS if not legal_actions(k)[3])
     정책 = 더미정책(3)          # 전부 SPLIT — 이 키에서는 불법이다
-    모델 = ServedModel(id=1, name="t", family="imitation", exact_ev=-0.1, policy=정책)
+    모델 = ServedModel(id=1, name="t", family="imitation", exact_ev=-0.1, policy=정책, artifact_sha256="0" * 64)
     고른것 = model_action(모델, 키, legal_actions(키))
     assert legal_actions(키)[고른것]
 
@@ -88,7 +88,7 @@ def test_색인에_없는_상태는_스탠드로_되돌아간다():
                      can_double=1, can_split=0, split_depth=0)
     assert 없는키 not in KEY_INDEX
     모델 = ServedModel(id=1, name="t", family="rl", exact_ev=-0.01,
-                      policy=더미정책(1))
+                      policy=더미정책(1), artifact_sha256="0" * 64)
     # 왜 STAND인가: 모르는 자리에서 모델의 판단을 믿을 근거가 없다. STAND는
     #     언제나 합법이고 카드를 더 받지 않으므로 가장 덜 해롭다.
     assert model_action(모델, 없는키, legal_actions(없는키)) == 0
@@ -117,7 +117,7 @@ def test_저장소가_서빙_중인_모델만_읽는다(세션, tmp_path):
             created_at=지금.isoformat()))
         세션.add(ModelRegistry(name=이름, family="rl",
                               rules_fp=RULES_V1.fingerprint(),
-                              artifact_path=str(경로), artifact_sha256="0" * 64,
+                              artifact_path=str(경로), artifact_sha256=file_sha256(경로),
                               exact_ev=-0.01, is_serving=서빙))
     세션.commit()
 
@@ -154,7 +154,7 @@ def test_기본_상대는_EV가_가장_좋은_모델이다(세션, tmp_path):
             n_params=0, created_at=지금.isoformat()))
         세션.add(ModelRegistry(name=이름, family="rl",
                               rules_fp=RULES_V1.fingerprint(),
-                              artifact_path=str(경로), artifact_sha256="0" * 64,
+                              artifact_path=str(경로), artifact_sha256=file_sha256(경로),
                               exact_ev=ev, is_serving=True))
     세션.commit()
     저장소 = ModelStore()
@@ -224,6 +224,9 @@ def test_레지스트리는_상대경로를_저장한다(세션):
 def test_저장소를_옮겨도_모델을_읽는다(세션, tmp_path, monkeypatch):
     from scripts.register_models import sync_registry
     shutil.copytree(ROOT / "models", tmp_path / "옛자리")
+    # 왜 옮긴 폴더에만 있는 모델을 두는가: 복사본만 두면 기본 models/를 읽는 잘못된
+    #     구현도 아래 단언을 통과한다. 이 파일은 옮긴 폴더에만 있다(행은 sync가 갱신).
+    모델등록(세션, tmp_path / "옛자리", "옮긴자리전용")
     등록 = sync_registry(세션, tmp_path / "옛자리")
     (tmp_path / "옛자리").rename(tmp_path / "새자리")    # 등록한 뒤 폴더를 옮긴다
 
@@ -234,7 +237,7 @@ def test_저장소를_옮겨도_모델을_읽는다(세션, tmp_path, monkeypatc
     monkeypatch.setenv("BJ_MODELS_DIR", str(tmp_path / "새자리"))
     (tmp_path / "새자리" / "rl_mc.npz").unlink()     # 기본 models/와 구별되게 한 칸 뺀다
     올라온수, 실패 = ModelStore().refresh(세션)
-    assert (올라온수, [f.name for f in 실패]) == (등록 - 1, ["rl_mc"])
+    assert (올라온수, [(f.name, f.reason) for f in 실패]) == (등록 - 1, [("rl_mc", "missing")])
 
 
 def test_깨진_모델_하나만_빠진다(세션, tmp_path, caplog):

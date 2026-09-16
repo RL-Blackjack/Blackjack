@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -24,13 +23,11 @@ from blackjack_rl.models.registry import ModelCard, load_policy, save_policy  # 
 from blackjack_rl.rules import RULES_V1  # noqa: E402
 from game.db import create_schema, make_engine, make_session_factory  # noqa: E402
 from game.models import ModelRegistry  # noqa: E402
+# 왜 서버 쪽 함수를 쓰는가: 등록 때 박는 해시와 서빙 때 대조하는 해시가 한 함수에서
+#   나와야 어긋나지 않는다. 게임 서버가 scripts/를 import하지 않도록 함수는 serving에 둔다.
+from game.serving import file_sha256  # noqa: E402
 
 RL_NAME = "rl_mc"
-
-
-def file_sha256(path: Path) -> str:
-    """파일 내용의 SHA-256. 레지스트리에 박아 두고 변조를 잡는다."""
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def convert_rl_snapshot(artifacts_dir: Path, models_dir: Path) -> Path:
