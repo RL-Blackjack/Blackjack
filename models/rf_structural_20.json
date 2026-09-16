@@ -1,0 +1,12 @@
+{
+  "name": "rf_structural_20",
+  "family": "supervised",
+  "rules_fp": "47c403568aa3",
+  "exact_ev": -0.026545999799432216,
+  "policy_sha256": "5ca4bdea769f58b1619b10274309c498e2b1e1a2b68de96e444b0c7eda8bdfa0",
+  "n_train_labels": 122,
+  "test_acc": 0.8258196721311475,
+  "fit_seconds": 0.14293209999596002,
+  "n_params": 10062,
+  "created_at": "2026-09-16T10:57:19+00:00"
+}

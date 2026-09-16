@@ -1,0 +1,12 @@
+{
+  "name": "mlp_structural_60",
+  "family": "supervised",
+  "rules_fp": "47c403568aa3",
+  "exact_ev": -0.03903389513408009,
+  "policy_sha256": "c2b3ac637d460d8458fb3e736a404874da1c762e1860767e979fb37593de8f06",
+  "n_train_labels": 366,
+  "test_acc": 0.7172131147540983,
+  "fit_seconds": 0.9280069999949774,
+  "n_params": 5572,
+  "created_at": "2026-09-16T10:57:23+00:00"
+}

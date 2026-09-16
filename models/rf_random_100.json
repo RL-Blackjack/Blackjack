@@ -1,0 +1,12 @@
+{
+  "name": "rf_random_100",
+  "family": "supervised",
+  "rules_fp": "47c403568aa3",
+  "exact_ev": -0.005108410191911581,
+  "policy_sha256": "594d07a056b27f66302084055609a9a9798c4aeb90ae43addc4aa44955f73621",
+  "n_train_labels": 610,
+  "test_acc": 1.0,
+  "fit_seconds": 0.1822794999970938,
+  "n_params": 45572,
+  "created_at": "2026-09-16T10:57:19+00:00"
+}

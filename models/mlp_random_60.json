@@ -1,0 +1,12 @@
+{
+  "name": "mlp_random_60",
+  "family": "supervised",
+  "rules_fp": "47c403568aa3",
+  "exact_ev": -0.023042986953153995,
+  "policy_sha256": "956627543897fbc1909d18cd5d32e7624eb68da2427fd3ea43cad9808cda7660",
+  "n_train_labels": 366,
+  "test_acc": 0.8442622950819673,
+  "fit_seconds": 0.7733864999972866,
+  "n_params": 5572,
+  "created_at": "2026-09-16T10:57:21+00:00"
+}
