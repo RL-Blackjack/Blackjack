@@ -181,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         보고 = headline(art, dp, ref, pre, freq)
         리포트 = write_report(art, 보고, args.reports)
 
-        print(f"[{art.meta['name']}] 360칸 중 {보고.tier_a * 100:.1f}% 일치 / "
+        print(f"[{art.meta['name']}] 결정 가능 칸 {보고.tier_a * 100:.1f}% 일치 / "
               f"비자명 칸 중 {보고.tier_b * 100:.1f}% / "
               f"EV 손실 {보고.ev_loss_pp:.2f}%p / 미결정 {보고.n_undecided}칸")
         print(f"    {gif}")

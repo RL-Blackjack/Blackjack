@@ -14,7 +14,7 @@ st.set_page_config(page_title="블랙잭 강화학습 연구", layout="wide")
 
 st.title("블랙잭 강화학습 연구 대시보드")
 st.caption("규칙만 알고 전략은 모르는 AI가 스스로 찾아낸 전략표를, "
-           "60년간 알려진 정답표와 비교한다.")
+           "출판된 기본전략표와 비교한다.")
 
 실행목록 = loaders.list_runs()
 if not 실행목록:

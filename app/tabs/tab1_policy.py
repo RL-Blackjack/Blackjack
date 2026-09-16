@@ -78,11 +78,15 @@ def render(art, dp) -> None:
                         art.chart_margin[자리], 미결정)
 
     참조표 = load_reference_chart()
-    if st.checkbox("1956년 기본 전략표와 비교", value=False, key="tab1_overlay"):
+    if st.checkbox("출판 기본전략표(4~8덱, S17·DAS)와 비교", value=False,
+                   key="tab1_overlay"):
         overlay_reference(fig, 참조표.notation, art.chart_notation[자리])
 
     왼쪽, 오른쪽, 가운데 = st.columns(3)
-    왼쪽.metric("360칸 일치율", f"{art.agree_a[자리] * 100:.2f}%")
+    # 왜 전체 칸 수를 라벨에 적지 않는가: agree_a의 분모는 미결정 칸과 사전등록
+    #   칸을 뺀 칸이라 표 전체보다 작다. 전체 칸 수를 적으면 분모를 과장한다.
+    왼쪽.metric("일치율(결정 가능 칸)", f"{art.agree_a[자리] * 100:.2f}%",
+               help="미결정 칸과 사전등록 칸을 뺀 칸 기준")
     오른쪽.metric("비자명 칸 일치율", f"{art.agree_b[자리] * 100:.2f}%")
     가운데.metric("미결정 칸", f"{int(미결정.sum())}칸")
 
