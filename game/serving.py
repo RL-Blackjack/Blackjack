@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 from sqlalchemy import select
@@ -14,7 +17,10 @@ from sqlalchemy.orm import Session
 from blackjack_rl.models.registry import load_policy
 from blackjack_rl.rules import RULES_V1
 from blackjack_rl.state import HIT, STAND, REACHABLE_KEYS, StateKey
+from game.config import ROOT
 from game.models import ModelRegistry
+
+log = logging.getLogger("game.serving")
 
 # 왜 미리 만들어 두는가: REACHABLE_KEYS는 610개 튜플이다. 결정마다 list.index()를
 #   돌면 O(610)이지만 사전이면 O(1)이다. 값은 불변이므로 import 때 한 번 만든다.
@@ -30,6 +36,16 @@ class ServedModel:
     family: str
     exact_ev: float
     policy: np.ndarray      # int8[610]
+
+
+@dataclass(frozen=True)
+class LoadFailure:
+    """서빙에 올리지 못한 모델 하나. refresh가 무엇이 왜 빠졌는지 돌려줄 때 쓴다."""
+
+    id: int
+    name: str
+    path: Path
+    error: Exception
 
 
 def model_action(model: ServedModel, key: StateKey, legal: np.ndarray) -> int:
@@ -55,23 +71,50 @@ def model_action(model: ServedModel, key: StateKey, legal: np.ndarray) -> int:
 class ModelStore:
     """레지스트리 표를 읽어 정책을 메모리에 올려 두는 곳. 프로세스마다 하나다."""
 
-    def __init__(self) -> None:
+    def __init__(self, models_dir: Path | None = None) -> None:
         self._모델: dict[int, ServedModel] = {}
+        # 왜 환경변수를 보는가: 배포 컨테이너는 모델 볼륨을 코드와 다른 곳에 붙일 수
+        #   있다. 레지스트리에는 이 폴더 기준 상대경로만 있으므로 폴더만 바꾸면 된다.
+        기본 = os.environ.get("BJ_MODELS_DIR") or ROOT / "models"
+        self.models_dir = Path(models_dir if models_dir is not None else 기본)
+        # 왜 따로 두는가: "비어 있으면 다시 읽기"로 판단하면 전부 깨졌을 때 요청마다
+        #   파일을 다시 열고 ERROR를 쏟는다. 한 번 시도했으면 명시적 refresh까지 쉰다.
+        self.loaded: bool = False
 
-    def refresh(self, session: Session) -> int:
-        """DB의 서빙 대상 모델을 전부 다시 읽는다. 읽은 개수를 돌려준다."""
+    def refresh(self, session: Session) -> tuple[int, list[LoadFailure]]:
+        """DB의 서빙 대상 모델을 전부 다시 읽는다. (올라온 수, 실패 목록)을 돌려준다."""
         새것: dict[int, ServedModel] = {}
-        행들 = session.scalars(
-            select(ModelRegistry).where(ModelRegistry.is_serving.is_(True)))
+        실패: list[LoadFailure] = []
+        행들 = list(session.scalars(
+            select(ModelRegistry).where(ModelRegistry.is_serving.is_(True))))
         for 행 in 행들:
-            # 왜 여기서 load_policy를 쓰는가: 규칙 지문과 내용 해시를 함께 본다.
-            #   규칙이 다른 모델을 태연히 서빙하면 DP 정답과 EV 손실이 전부 틀린
-            #   값으로 쌓인다. 예외를 잡지 않고 그대로 올린다.
-            정책, _카드 = load_policy(행.artifact_path, rules=RULES_V1)
+            # 왜 이렇게 잇는가: 상대경로 행은 models_dir 기준으로 풀린다. 옛 DB의
+            #   절대경로 행은 pathlib이 오른쪽 절대경로를 그대로 돌려주므로 호환된다.
+            경로 = self.models_dir / 행.artifact_path
+            try:
+                # 왜 load_policy인가: 규칙 지문과 내용 해시를 함께 본다. 규칙이 다른
+                #   모델을 태연히 서빙하면 DP 정답과 EV 손실이 전부 틀린 값으로 쌓인다.
+                정책, _카드 = load_policy(경로, rules=RULES_V1)
+            except Exception as 오류:
+                # 왜 그 모델만 빼는가: 파일 하나가 손상되거나 규칙이 달라도 나머지
+                #   모델까지 버리면 게임 API 전체가 500이 된다(실측). 조용히 넘어가지
+                #   않도록 이름·번호·경로·원인을 ERROR로 남기고 실패 목록에 담는다.
+                log.error("모델 %s(id=%s, 경로 %s)을 서빙에서 뺀다: %s: %s",
+                          행.name, 행.id, 경로, type(오류).__name__, 오류)
+                실패.append(LoadFailure(id=행.id, name=행.name, path=경로, error=오류))
+                continue
             새것[행.id] = ServedModel(id=행.id, name=행.name, family=행.family,
                                     exact_ev=float(행.exact_ev), policy=정책)
         self._모델 = 새것
-        return len(새것)
+        self.loaded = True
+
+        if 행들 and not 새것:
+            # 왜 예외인가: 행이 있는데 하나도 못 올리면 서버가 "상대 없음"으로 조용히
+            #   뜬다. 빈 표(아직 등록 전)는 실패가 아니므로 여기 오지 않는다.
+            이름들 = ", ".join(f.name for f in 실패)
+            raise RuntimeError(
+                f"서빙 대상 모델 {len(행들)}개를 하나도 올리지 못했다: {이름들}")
+        return len(새것), 실패
 
     def get(self, model_id: int) -> ServedModel | None:
         """번호로 찾는다. 없으면 None."""

@@ -73,13 +73,23 @@ def convert_rl_snapshot(artifacts_dir: Path, models_dir: Path) -> Path:
 def sync_registry(session: Session, models_dir: Path) -> int:
     """models/ 의 정책 파일을 전부 레지스트리 표에 맞춰 넣는다. 등록 개수를 돌려준다."""
     개수 = 0
-    for npz in sorted(Path(models_dir).glob("*.npz")):
-        _정책, 카드 = load_policy(npz, rules=RULES_V1)
+    models_dir = Path(models_dir)
+    for npz in sorted(models_dir.glob("*.npz")):
+        try:
+            _정책, 카드 = load_policy(npz, rules=RULES_V1)
+        except Exception as 오류:
+            # 왜 이름을 붙이는가: numpy의 "pickled data" 같은 원래 메시지에는 어느
+            #   파일인지가 없다. 13개 중 무엇을 다시 만들어야 하는지 바로 보여야 한다.
+            raise RuntimeError(f"{npz.name}을 레지스트리에 올리지 못했다: "
+                               f"{type(오류).__name__}: {오류}") from 오류
         행 = session.scalar(select(ModelRegistry).where(ModelRegistry.name == 카드.name))
         값 = {
             "family": 카드.family,
             "rules_fp": 카드.rules_fp,
-            "artifact_path": str(npz),
+            # 왜 상대경로인가: 절대경로를 박으면 저장소 폴더를 옮기거나 윈도에서 등록한
+            #   DB를 리눅스 컨테이너에서 열 때 모든 모델이 사라진다. POSIX 구분자로
+            #   두어야 어느 OS의 ModelStore(models_dir)에서도 같은 파일을 가리킨다.
+            "artifact_path": npz.relative_to(models_dir).as_posix(),
             "artifact_sha256": file_sha256(npz),
             "exact_ev": float(카드.exact_ev),
             "is_serving": True,
