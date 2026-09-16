@@ -1,6 +1,6 @@
-"""이 파일은 DB 스키마가 설계서대로 만들어지고 제약이 걸리는지 확인한다.
-입력: 메모리 SQLite(부분 인덱스 DDL은 SQLite·PG 방언으로 컴파일만 한다).
-출력: 테이블·컬럼·유니크·부분 인덱스·외래키·UTC 시각에 대한 pytest 결과.
+"""이 파일은 DB 스키마가 설계서대로 만들어지고 칸이 값을 제대로 담는지 확인한다.
+입력: 메모리 SQLite(PG 쪽 시각 정규화는 타입 메서드를 직접 부른다).
+출력: 테이블·컬럼·상대 모델 해시·UTC 시각에 대한 pytest 결과(제약은 test_db_constraints.py).
 """
 
 import sys
@@ -9,10 +9,9 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import DateTime, func, inspect, select, text
-from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
-from sqlalchemy.schema import CreateIndex
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -124,6 +123,25 @@ def test_게임에_규칙_지문이_박힌다(세션):
     assert 세션.scalar(select(Game)).rules_fp == "47c403568aa3"
 
 
+def test_게임은_상대_모델의_파일_해시를_담는다(세션):
+    # 왜: 레지스트리 행은 같은 이름으로 다시 등록하면 해시가 덮어쓰인다. 게임에 박힌
+    #   해시로만 decisions.ai_action 이 어느 정책 파일에서 나왔는지 가려낸다.
+    u = 사용자(세션)
+    해시 = "0123456789abcdef" * 4
+    세션.add_all([
+        Game(user_id=u.id, rules_fp="x", started_at=지금, opponent_artifact_sha256=해시),
+        Game(user_id=u.id, rules_fp="x", started_at=지금),  # 상대 모델이 없는 게임
+    ])
+    세션.commit()
+    세션.expire_all()
+    assert 세션.scalars(select(Game.opponent_artifact_sha256).order_by(Game.id)).all() == [해시, None]
+    # 왜 반영된 스키마도 보는가: SQLite는 길이를 강제하지 않는다. PG의 VARCHAR(64)는
+    #   이 선언에서 나오므로 선언이 64자·NULL 허용인지 직접 본다.
+    칸 = {c["name"]: c for c in inspect(세션.get_bind()).get_columns("games")}
+    assert 칸["opponent_artifact_sha256"]["nullable"] is True
+    assert 칸["opponent_artifact_sha256"]["type"].length == 64
+
+
 def test_없는_사용자의_게임은_만들_수_없다(세션):
     세션.add(Game(user_id=99999, rules_fp="x", started_at=지금))
     with pytest.raises(IntegrityError):
@@ -158,97 +176,6 @@ def test_모델_이름은_유일하다(세션):
                               exact_ev=-0.1, is_serving=True))
     with pytest.raises(IntegrityError):
         세션.commit()
-
-
-def 게임(세션, u):
-    g = Game(user_id=u.id, rules_fp="47c403568aa3", started_at=지금)
-    세션.add(g)
-    세션.commit()
-    return g
-
-
-def 라운드(g, 회차, 열림):
-    return Round(game_id=g.id, user_id=g.user_id, round_no=회차, seed=회차,
-                 is_open=열림, dealer_up=10)
-
-
-def 결정(r, 순번):
-    return Decision(round_id=r.id, seq=순번, total=16, is_soft=0, dealer_up=10,
-                    can_double=1, can_split=0, split_depth=0, action_taken=1,
-                    dp_optimal_action=1, dp_ev_loss=0.0, created_at=지금)
-
-
-def 유일_위반(세션, 칸들):
-    # 왜 원인 메시지를 보는가: IntegrityError의 문자열에는 INSERT 문 전체가 붙어
-    #   칸 이름이 늘 들어 있다. 어느 제약이 막았는지는 드라이버 메시지에만 있다.
-    with pytest.raises(IntegrityError) as 오류:
-        세션.commit()
-    assert f"UNIQUE constraint failed: {칸들}" in str(오류.value.orig)
-    세션.rollback()
-
-
-def 열린_라운드_수(세션):
-    return 세션.scalar(select(func.count()).select_from(Round).where(Round.is_open.is_(True)))
-
-
-def test_같은_라운드의_같은_순번은_두_번_기록되지_않는다(세션):
-    # 왜: 같은 결정을 동시에 두 번 보내면 둘 다 확인을 통과한다. DB가 막아야 한다.
-    g = 게임(세션, 사용자(세션))
-    r1, r2 = 라운드(g, 1, False), 라운드(g, 2, False)
-    세션.add_all([r1, r2])
-    세션.commit()
-    세션.add_all([결정(r1, 0), 결정(r1, 1), 결정(r2, 0)])  # 다른 라운드의 0번은 된다
-    세션.commit()
-    세션.add(결정(r1, 1))
-    유일_위반(세션, "decisions.round_id, decisions.seq")
-
-
-def test_같은_게임의_같은_회차는_두_번_만들어지지_않는다(세션):
-    # 왜 닫힌 라운드로 시험하는가: 열린 라운드면 사용자당 열린 라운드 인덱스가
-    #   먼저 막아, 회차 제약이 없어도 통과해 버린다.
-    u = 사용자(세션)
-    g1, g2 = 게임(세션, u), 게임(세션, u)
-    세션.add_all([라운드(g1, 1, False), 라운드(g2, 1, False)])  # 다른 게임의 1회차는 된다
-    세션.commit()
-    세션.add(라운드(g1, 1, False))
-    유일_위반(세션, "rounds.game_id, rounds.round_no")
-
-
-def test_한_사용자는_열린_라운드를_둘_가질_수_없다(세션):
-    # 왜: 대기 중인 결정을 새 게임으로 버리는 우회를 DB가 끝까지 막는다.
-    u = 사용자(세션)
-    g1, g2 = 게임(세션, u), 게임(세션, u)
-    첫판 = 라운드(g1, 1, True)
-    세션.add(첫판)
-    세션.commit()
-    세션.add(라운드(g2, 1, True))  # 다른 게임이어도 막힌다
-    유일_위반(세션, "rounds.user_id")
-
-    세션.add_all([라운드(g1, 2, False), 라운드(g2, 1, False), 라운드(g2, 2, False)])
-    세션.commit()  # 닫힌 라운드는 여러 개여도 된다
-    첫판.is_open = False
-    세션.commit()
-    세션.add(라운드(g2, 3, True))  # 닫고 나면 다시 열 수 있다
-    세션.commit()
-    assert 열린_라운드_수(세션) == 1
-
-
-def test_다른_사용자는_각자_열린_라운드를_가질_수_있다(세션):
-    가 = 게임(세션, 사용자(세션, "a@b.com"))
-    나 = 게임(세션, 사용자(세션, "c@d.com"))
-    세션.add_all([라운드(가, 1, True), 라운드(나, 1, True)])
-    세션.commit()
-    assert 열린_라운드_수(세션) == 2
-
-
-def test_부분_인덱스가_SQLite와_PG에서_WHERE를_가진다():
-    # 왜: WHERE가 빠지면 사용자당 라운드가 평생 하나로 묶인다. 두 방언을 다 본다.
-    인덱스 = {i.name: i for i in Round.__table__.indexes}["uq_rounds_one_open_per_user"]
-    assert 인덱스.unique
-    for 방언 in (sqlite.dialect(), postgresql.dialect()):
-        문장 = str(CreateIndex(인덱스).compile(dialect=방언))
-        assert "ON rounds (user_id)" in 문장
-        assert "WHERE" in 문장 and "is_open" in 문장.split("WHERE", 1)[1]
 
 
 def test_시각_칸_여섯_개가_모두_UTC_타입이다():

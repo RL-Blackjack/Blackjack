@@ -122,6 +122,12 @@ class Game(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     opponent_model_id: Mapped[int | None] = mapped_column(
         ForeignKey("model_registry.id"), nullable=True)
+    # 왜 모델 번호 말고 파일 해시도 박는가: 레지스트리 행은 같은 이름으로 다시 등록하면
+    #   해시가 덮어쓰인다. 게임 시작 시점의 정책 파일 해시가 있어야 decisions.ai_action
+    #   이 어느 정책에서 나왔는지 나중에 가려낼 수 있다.
+    # 왜 NULL을 허용하는가: 서빙 중인 모델이 없으면 상대 없이 게임이 시작된다
+    #   (opponent_model_id도 비어 있다). 그때는 기록할 해시가 없다.
+    opponent_artifact_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # 왜 게임마다 규칙 지문을 박는가: 규칙이 바뀌면 옛 기록과 새 기록을 섞어
     #   집계하면 안 된다. 지문이 다르면 통계에서 분리할 수 있다.
     rules_fp: Mapped[str] = mapped_column(String(12), nullable=False)
