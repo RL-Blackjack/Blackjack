@@ -25,3 +25,15 @@ desktop.ini
 # 웹앱(Streamlit Cloud)이 저장소에서 바로 읽어 쓸 수 있다.
 media/*.mp4
 media/*.mov
+
+# ── 게임 서버 (저장소에 올리지 않음) ──
+# 회원 이메일·비밀번호 해시·플레이 기록이 들어 있다. 공개 저장소에 올라가면 안 된다.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+# JWT 비밀키 같은 비밀값. 설계서 §8.2 "저장소에 커밋 금지".
+.env
+.env.*
+!.env.example
+.superpowers/
