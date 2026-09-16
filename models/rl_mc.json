@@ -1,0 +1,12 @@
+{
+  "name": "rl_mc",
+  "family": "rl",
+  "rules_fp": "47c403568aa3",
+  "exact_ev": -0.00882164676673217,
+  "policy_sha256": "bf23a78d92905dfb4cdd661c43d36389dd3ec54b2b30502a2fe05d51944dee1f",
+  "n_train_labels": 0,
+  "test_acc": 0.0,
+  "fit_seconds": 0.0,
+  "n_params": 610,
+  "created_at": "2026-09-16T11:48:40.411782+00:00"
+}
