@@ -8,12 +8,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, inspect, select
+from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from game.db import make_engine  # noqa: E402
 from game.models import (  # noqa: E402
     Base,
     Decision,
@@ -29,7 +30,10 @@ from game.models import (  # noqa: E402
 
 @pytest.fixture
 def 세션():
-    engine = create_engine("sqlite://")
+    # 왜 create_engine이 아니라 make_engine인가: SQLite는 외래키를 기본으로 무시한다.
+    #     서버가 쓰는 유일한 엔진 공장을 거쳐야 PRAGMA foreign_keys=ON 이 켜지고,
+    #     그래야 이 파일이 배포(PostgreSQL)와 같은 제약 아래에서 돈다.
+    engine = make_engine("sqlite://")
     Base.metadata.create_all(engine)
     with Session(engine) as s:
         yield s
