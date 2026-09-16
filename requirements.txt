@@ -16,3 +16,14 @@ joblib==1.6.0
 # W8 연구 대시보드. app/ 안에서만 쓰고 src/ 에서는 import하지 않는다.
 streamlit==1.64.0
 plotly==7.1.0
+
+# W9 게임 서버. game/ 안에서만 쓰고 src/ 에서는 import하지 않는다.
+fastapi==0.141.1
+uvicorn==0.53.0
+sqlalchemy==2.0.54
+argon2-cffi==25.1.0
+pyjwt==2.14.0
+httpx==0.28.1
+pytest-asyncio==1.4.0
+# 왜: pydantic의 EmailStr은 이 패키지가 없으면 ImportError를 낸다.
+email-validator==2.3.0
