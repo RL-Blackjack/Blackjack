@@ -13,11 +13,11 @@ import numpy as np
 
 from blackjack_rl.cards import InfiniteShoe
 from blackjack_rl.dp.exact import add_card
-from blackjack_rl.env import BlackjackEnv
+from blackjack_rl.env import BlackjackEnv, RoundResult
 from blackjack_rl.hand import Hand
 from blackjack_rl.rng import make_streams
 from blackjack_rl.rules import RULES_V1, RuleSet
-from blackjack_rl.state import SPLIT, StateKey
+from blackjack_rl.state import DOUBLE, HIT, SPLIT, StateKey
 
 SEED_BITS: int = 62
 MAX_CARD: int = 10
@@ -124,6 +124,32 @@ def _손합계(cards: Sequence[int]) -> int:
     return Hand(cards=list(cards)).total
 
 
+def rebuild_hand_cards(log: Sequence[int], result: RoundResult) -> dict[int, list[int]]:
+    """끝난 라운드의 뽑기 로그를 손 인덱스별 카드로 나눈다. 어긋나면 RuntimeError."""
+    # 왜 로그로 다시 만드는가: 마지막 히트·더블 카드, 에이스 스플릿 자식의 둘째 장,
+    #   내추럴 라운드의 두 장은 act가 다시 불리지 않아 전이로 되찾을 수 없다.
+    #   코어는 손 0의 두 장, 딜러 업·홀, 그 뒤 손 인덱스 순서로 뽑고 딜러가 마지막에 뽑는다.
+    카드: dict[int, list[int]] = {}
+    자리 = 4
+    try:
+        카드[0] = [log[0], log[1]]
+        for j, rec in enumerate(result.hands):
+            if j >= 1:
+                # 왜 부모의 첫 장인가: 스플릿은 페어에서만 되므로 두 장의 값이 같다.
+                카드[j] = [카드[rec.parent][0], log[자리]]
+                자리 += 1
+            # 왜 분기 노드도 여기서 도는가: 화면에서는 빠지지만 뽑는 순서에는 끼어 있다.
+            for _키, 행동 in rec.trajectory:
+                if 행동 in (HIT, DOUBLE):
+                    카드[j].append(log[자리])
+                    자리 += 1
+    except IndexError as e:
+        raise RuntimeError("뽑기 로그가 플레이어 몫보다 짧다") from e
+    if list(log[2:4]) + list(log[자리:]) != [int(c) for c in result.dealer_cards]:
+        raise RuntimeError("플레이어 몫을 뺀 로그가 딜러 카드와 다르다")
+    return 카드
+
+
 def play(seed: int, actions: Sequence[int], *,
          rules: RuleSet = RULES_V1) -> RoundView:
     """시드로 라운드를 처음부터 재현하고 행동 목록만큼 진행한다."""
@@ -188,12 +214,13 @@ def play(seed: int, actions: Sequence[int], *,
         #   조용히 무시하면 틀린 상태를 보여 주게 된다.
         raise IllegalAction(f"라운드가 끝났는데 행동이 {len(남은)}개 더 있다")
 
+    복원 = rebuild_hand_cards(슈.log, 결과)
     손들 = []
     for i, rec in enumerate(결과.hands):
         if rec.trajectory and rec.trajectory[-1][1] == SPLIT:
             continue      # 갈라진 분기 노드는 자기 결과가 없다
-        몫 = 카드.get(i, [])
-        손들.append(HandView(cards=tuple(몫), total=_손합계(몫) if 몫 else 0,
+        몫 = 복원[i]
+        손들.append(HandView(cards=tuple(몫), total=_손합계(몫),
                             bet=float(rec.bet), result=float(rec.result)))
 
     return Finished(

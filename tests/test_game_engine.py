@@ -14,7 +14,8 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from blackjack_rl.dp.exact import add_card  # noqa: E402
-from blackjack_rl.state import DOUBLE, HIT, SPLIT, STAND  # noqa: E402
+from blackjack_rl.env import BlackjackEnv, HandRecord, RoundResult  # noqa: E402
+from blackjack_rl.state import DOUBLE, HIT, SPLIT, STAND, StateKey  # noqa: E402
 from game.engine import (  # noqa: E402
     Finished,
     IllegalAction,
@@ -22,6 +23,7 @@ from game.engine import (  # noqa: E402
     infer_card,
     new_seed,
     play,
+    rebuild_hand_cards,
 )
 
 
@@ -207,3 +209,110 @@ def test_시드가_커도_재현된다():
     큰시드 = 2**40 + 12345
     a, b = play(큰시드, []), play(큰시드, [])
     assert type(a) is type(b)
+
+
+@pytest.fixture
+def 코어손(monkeypatch):
+    """BlackjackEnv._settle을 감싸 정산 직전 코어 손의 카드를 라운드마다 남긴다."""
+    기록 = []
+    원래 = BlackjackEnv._settle
+
+    def 감싼(self, hands, records, dealer_total, dealer_bj):
+        원래(self, hands, records, dealer_total, dealer_bj)
+        # 왜 분기 노드를 빼는가: Finished.hands도 SPLIT으로 끝난 손을 보여 주지 않는다.
+        기록.append([tuple(h.cards) for h, r in zip(hands, records)
+                   if not (r.trajectory and r.trajectory[-1][1] == SPLIT)])
+
+    monkeypatch.setattr(BlackjackEnv, "_settle", 감싼)
+    return 기록
+
+
+def test_끝난_손의_카드가_코어의_실제_손과_같다(코어손):
+    # 왜: 마지막 히트·더블 카드, 에이스 스플릿 자식의 둘째 장, 내추럴 라운드의 두 장은
+    #     act 콜백이 다시 불리지 않아 전이로 되찾을 수 없다. 코어가 정산에 쓴 카드와 직접 댄다.
+    정책들 = [
+        lambda v, r: int(r.choice(v.legal)),
+        lambda v, r: SPLIT if SPLIT in v.legal else int(r.choice(v.legal)),
+        lambda v, r: DOUBLE if DOUBLE in v.legal else int(r.choice(v.legal)),
+    ]
+    판수 = 에이스스플릿 = 더블 = 버스트 = 즉시 = 손셋이상 = 0
+    for 번호, 고르기 in enumerate(정책들):
+        난수 = np.random.default_rng(100 + 번호)
+        for seed in range(번호 * 10_000, 번호 * 10_000 + 1000):
+            코어손.clear()
+            본것, 결과 = 끝까지(seed, lambda v: 고르기(v, 난수))
+            assert len(코어손) == 1, f"seed={seed} 정산이 {len(코어손)}번 불렸다"
+            assert [h.cards for h in 결과.hands] == 코어손[0], (
+                f"seed={seed} 보인 손={[h.cards for h in 결과.hands]} 실제={코어손[0]}")
+            for h in 결과.hands:
+                assert h.total == 손합계(h.cards)[0], f"seed={seed} {h}"
+                버스트 += h.total > 21
+                더블 += h.bet == 2.0
+            판수 += 1
+            즉시 += 결과.n_decisions == 0
+            손셋이상 += len(결과.hands) >= 3
+            # 스플릿한 판의 손은 전부 자식이므로 첫 장이 에이스면 에이스 스플릿 자식이다.
+            에이스스플릿 += sum(len(결과.hands) >= 2 and h.cards[0] == 1 for h in 결과.hands)
+    assert 판수 >= 3000
+    # 왜 이 하한들인가: 틀리던 네 경우(버스트, 더블, 내추럴, 에이스 스플릿)와 재스플릿이
+    #     실제로 섞여 있어야 이 대조가 뜻을 갖는다. 실측(버스트 1,056손, 더블 1,620손,
+    #     즉시 종료 246판, 에이스 스플릿 자식 12손, 손 3개 이상 50판)의 절반쯤으로 잡았다.
+    assert 버스트 >= 500 and 더블 >= 800 and 즉시 >= 120, (버스트, 더블, 즉시)
+    assert 에이스스플릿 >= 6 and 손셋이상 >= 25, (에이스스플릿, 손셋이상)
+
+
+def test_버스트한_손은_합계가_21을_넘고_판돈을_잃는다():
+    버스트 = 0
+    for seed in range(600):
+        _본것, 결과 = 끝까지(seed, lambda v: HIT if v.key.total < 17 else STAND)
+        for h in 결과.hands:
+            if h.total > 21:
+                버스트 += 1
+                assert h.result == -h.bet, f"seed={seed} {h}"
+    # 왜 하한을 두는가: 예전 복원은 버스트를 부른 마지막 장을 빠뜨려 21을 넘는 합계를
+    #     한 번도 보이지 않았다. 그러면 위 단언은 한 번도 돌지 않고 통과한다.
+    #     600판 실측 173손의 절반쯤으로 잡았다.
+    assert 버스트 >= 80, f"합계가 21을 넘는 손이 {버스트}개뿐이다"
+
+
+def test_내추럴로_끝난_라운드도_두_장을_보여준다():
+    즉시 = [v for v in (play(s, []) for s in range(400)) if isinstance(v, Finished)]
+    assert len(즉시) >= 15, f"결정 없이 끝난 라운드가 {len(즉시)}개뿐이다"
+    for v in 즉시:
+        assert v.n_decisions == 0 and len(v.hands) == 1
+        손 = v.hands[0]
+        assert len(손.cards) == 2, f"손 0의 카드가 {손.cards}다"
+        assert 손.total == 손합계(손.cards)[0]
+        if 손.result > 0:
+            # 왜: 결정 없이 이기는 길은 플레이어 블랙잭뿐이다.
+            assert 손.total == 21 and sorted(손.cards) == [1, 10]
+
+
+def test_에이스_스플릿_자식은_두_장이다():
+    시드들 = [s for s in range(3000)
+            if isinstance(v := play(s, []), Pending) and v.player_cards == (1, 1)]
+    assert len(시드들) >= 5, f"에이스 페어 시드가 {len(시드들)}개뿐이다"
+    for s in 시드들:
+        assert SPLIT in play(s, []).legal
+        결과 = play(s, [SPLIT])
+        # 왜 곧바로 끝나는가: 에이스 스플릿 자식은 한 장만 받고 결정 없이 끝난다.
+        assert isinstance(결과, Finished)
+        assert len(결과.hands) == 2
+        for h in 결과.hands:
+            assert len(h.cards) == 2 and h.cards[0] == 1, f"seed={s} {h}"
+            assert h.total == 손합계(h.cards)[0]
+
+
+def test_뽑기_로그가_어긋나면_예외():
+    키 = StateKey(total=11, is_soft=0, dealer_up=10, can_double=1, can_split=0)
+    # 손 0: 5, 6 / 딜러 업·홀: 10, 6 / 손 0 히트: 4 / 딜러 추가: 3
+    결과 = RoundResult(hands=[HandRecord(trajectory=[(키, HIT), (키, STAND)])],
+                     dealer_up=10, dealer_cards=[10, 6, 3])
+    정상 = [5, 6, 10, 6, 4, 3]
+    assert rebuild_hand_cards(정상, 결과) == {0: [5, 6, 4]}
+    for 망가진 in ([*정상, 7],              # 꼬리에 모르는 카드
+                  [5, 6, 10, 6, 4, 9],     # 딜러 추가 카드가 다르다
+                  [5, 6, 10, 6, 4],        # 딜러 추가 카드가 빠졌다
+                  [5, 6, 10, 6]):          # 플레이어 몫까지 모자란다
+        with pytest.raises(RuntimeError):
+            rebuild_hand_cards(망가진, 결과)
