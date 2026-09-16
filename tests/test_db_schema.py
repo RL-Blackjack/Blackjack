@@ -133,8 +133,12 @@ def test_게임은_상대_모델의_파일_해시를_담는다(세션):
         Game(user_id=u.id, rules_fp="x", started_at=지금),  # 상대 모델이 없는 게임
     ])
     세션.commit()
+    # 왜 같은 해시로 한 판 더 따로 커밋하는가: 한 모델을 상대로 여러 판을 둔다. 칸에
+    #   unique 가 붙으면 이 커밋이 IntegrityError 로 막혀 두 번째 게임부터 못 만든다.
+    세션.add(Game(user_id=u.id, rules_fp="x", started_at=지금, opponent_artifact_sha256=해시))
+    세션.commit()
     세션.expire_all()
-    assert 세션.scalars(select(Game.opponent_artifact_sha256).order_by(Game.id)).all() == [해시, None]
+    assert 세션.scalars(select(Game.opponent_artifact_sha256).order_by(Game.id)).all() == [해시, None, 해시]
     # 왜 반영된 스키마도 보는가: SQLite는 길이를 강제하지 않는다. PG의 VARCHAR(64)는
     #   이 선언에서 나오므로 선언이 64자·NULL 허용인지 직접 본다.
     칸 = {c["name"]: c for c in inspect(세션.get_bind()).get_columns("games")}
