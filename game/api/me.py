@@ -62,6 +62,9 @@ def my_stats(사용자: Annotated[User, Depends(current_user)],
 def my_games(사용자: Annotated[User, Depends(current_user)],
              session: Annotated[Session, Depends(get_session)],
              limit: Annotated[int, Query(ge=1, le=100)] = 10) -> list[GameRowOut]:
-    """최근 게임 목록."""
+    """최근 게임 목록. 지금 규칙으로 둔 게임만 준다."""
+    # 왜 전적과 같은 지문으로 거르는가: 규칙이 바뀐 옛 게임은 열면 409라 이어 둘 수
+    #   없다. 목록에 두면 누를 수 없는 줄이 되고, 전적 숫자와도 어긋난다.
     return [GameRowOut(**vars(g))
-            for g in recent_games(session, 사용자.id, limit=limit)]
+            for g in recent_games(session, 사용자.id,
+                                  rules_fp=RULES_V1.fingerprint(), limit=limit)]

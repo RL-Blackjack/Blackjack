@@ -42,15 +42,21 @@ def 사용자(s, 이름="지우"):
     return u
 
 
-def 게임심기(s, u, 라운드들, *, fp=FP, 순서=0):
-    """라운드들 = [(net, [(고른것, 정답, 손실), ...]), ...]"""
+def 게임심기(s, u, 라운드들, *, fp=FP, 순서=0, 열린=None):
+    """라운드들 = [(net, [(고른것, 정답, 손실), ...]), ...]
+    열린 = 끝나지 않은 마지막 라운드에서 이미 내린 결정들(None이면 열린 라운드 없음).
+    """
     g = Game(user_id=u.id, rules_fp=fp, started_at=지금 + timedelta(minutes=순서),
              net_result=sum(n for n, _ in 라운드들))
     s.add(g)
     s.flush()
-    for i, (net, 결정들) in enumerate(라운드들, start=1):
-        r = Round(game_id=g.id, round_no=i, seed=1000 + i, actions="0",
-                  is_open=False, dealer_up=7, dealer_cards="7,10", net=net)
+    전부 = [(net, 결정들, False) for net, 결정들 in 라운드들]
+    if 열린 is not None:
+        전부.append((0.0, 열린, True))  # 진행 중인 라운드는 net이 아직 0.0이다
+    for i, (net, 결정들, 열림) in enumerate(전부, start=1):
+        r = Round(game_id=g.id, user_id=u.id, round_no=i, seed=1000 + i, actions="0",
+                  is_open=열림, dealer_up=7, dealer_cards="" if 열림 else "7,10",
+                  net=net)
         s.add(r)
         s.flush()
         for j, (고른것, 정답, 손실) in enumerate(결정들):
@@ -130,7 +136,7 @@ def test_최근_게임을_새것부터_준다(세션):
     u = 사용자(세션)
     for i in range(5):
         게임심기(세션, u, [(1.0, [(0, 0, 0.0)])], 순서=i)
-    목록 = recent_games(세션, u.id, limit=3)
+    목록 = recent_games(세션, u.id, rules_fp=FP, limit=3)
     assert len(목록) == 3
     assert [g.started_at for g in 목록] == sorted(
         [g.started_at for g in 목록], reverse=True)
@@ -142,11 +148,84 @@ def test_라운드가_없는_게임도_목록에_나온다(세션):
     u = 사용자(세션)
     세션.add(Game(user_id=u.id, rules_fp=FP, started_at=지금, net_result=0.0))
     세션.commit()
-    목록 = recent_games(세션, u.id)
+    목록 = recent_games(세션, u.id, rules_fp=FP)
     assert len(목록) == 1
     assert 목록[0].rounds == 0
     # 왜: 결정이 0개일 때 0으로 나누면 터진다. 방금 만든 게임이 흔한 경우다.
     assert 목록[0].agreement == pytest.approx(0.0)
+
+
+def test_열린_라운드는_승패무와_라운드_수에서_빠진다(세션):
+    u = 사용자(세션)
+    게임심기(세션, u, [(1.0, [(0, 0, 0.0)]), (0.0, [(0, 0, 0.0)]),
+                   (-1.0, [(0, 0, 0.0)])], 열린=[(1, 0, 0.2)])
+    통계 = user_stats(세션, u.id, rules_fp=FP)
+    # 왜: 진행 중인 라운드는 net이 0.0이라 무승부로 세어졌다. 버린 라운드가
+    #   쌓이면 승률이 끝없이 내려간다.
+    assert (통계.rounds, 통계.wins, 통계.losses, 통계.pushes) == (3, 1, 1, 1)
+    assert 통계.win_rate == pytest.approx(1 / 3)
+    # 왜 결정은 전부 세는가: 정답과 손실은 결정 시점에 확정된다. 빼면 오답을 낸 뒤
+    #   라운드를 버려 일치율에서 지울 수 있다.
+    assert 통계.decisions == 4
+    assert 통계.agreement == pytest.approx(3 / 4)
+    assert 통계.ev_loss_total == pytest.approx(0.2)
+    [줄] = recent_games(세션, u.id, rules_fp=FP)
+    assert 줄.rounds == 3
+    assert 줄.agreement == pytest.approx(3 / 4)
+
+
+def test_열린_라운드만_있는_게임도_게임_수에는_든다(세션):
+    u = 사용자(세션)
+    게임심기(세션, u, [(1.0, [(0, 0, 0.0)])])
+    방금것 = 게임심기(세션, u, [], 순서=1, 열린=[])
+    # 왜: 열린 라운드 조건을 WHERE에 두면 이 게임의 조인 행이 통째로 빠져
+    #   게임 수가 2에서 1이 된다. 조건은 조인의 ON 절에 있어야 한다.
+    통계 = user_stats(세션, u.id, rules_fp=FP)
+    assert (통계.games, 통계.rounds, 통계.pushes) == (2, 1, 0)
+    목록 = {줄.game_id: 줄.rounds for 줄 in recent_games(세션, u.id, rules_fp=FP)}
+    assert len(목록) == 2
+    assert 목록[방금것.id] == 0
+
+
+def test_최근_게임은_현재_규칙의_게임만_준다(세션):
+    u = 사용자(세션)
+    지금것 = 게임심기(세션, u, [(1.0, [(0, 0, 0.0)])])
+    게임심기(세션, u, [(1.0, [(1, 0, 0.9)])], fp="ffffffffffff", 순서=1)
+    # 왜: 규칙이 바뀐 옛 게임은 열면 409(rules_changed)라 이어 둘 수 없고, 일치율도
+    #   다른 DP 정답 기준이다. 더 최근 게임이라도 목록에 나오면 안 된다.
+    목록 = recent_games(세션, u.id, rules_fp=FP)
+    assert [줄.game_id for 줄 in 목록] == [지금것.id]
+
+
+def _VM단계수(세션, 조회):
+    """조회를 도는 동안 SQLite 가상 머신이 실행한 명령 수와 조회 결과."""
+    원시 = 세션.connection().connection.driver_connection
+    수 = [0]
+
+    def 세기():
+        수[0] += 1
+        return 0  # 0이 아니면 SQLite가 조회를 중단한다
+
+    원시.set_progress_handler(세기, 1)
+    try:
+        결과 = 조회()
+    finally:
+        원시.set_progress_handler(None, 1)
+    return 수[0], 결과
+
+
+def test_최근_게임_집계가_남의_게임을_읽지_않는다(세션):
+    나, 남 = 사용자(세션, "나"), 사용자(세션, "남")
+    게임심기(세션, 나, [(1.0, [(0, 0, 0.0)])])
+    전, 전결과 = _VM단계수(세션, lambda: recent_games(세션, 나.id, rules_fp=FP))
+    for i in range(10):
+        게임심기(세션, 남, [(-1.0, [(1, 0, 0.5)] * 5)] * 10, 순서=i)
+    후, 후결과 = _VM단계수(세션, lambda: recent_games(세션, 나.id, rules_fp=FP))
+    # 왜 결과가 아니라 일의 양을 보는가: 서브쿼리가 모든 사람의 라운드를 묶어도
+    #   바깥 조인이 버리므로 결과는 같다. 그 대신 남의 결정 500개를 훑는 만큼
+    #   명령 수가 수십 배로 늘고, 사용자가 늘수록 내 목록이 느려진다(M3).
+    assert 후결과 == 전결과
+    assert 후 < 전 * 2, (전, 후)
 
 
 def test_전적_API가_숫자를_그대로_준다(tmp_path, monkeypatch):
@@ -154,15 +233,18 @@ def test_전적_API가_숫자를_그대로_준다(tmp_path, monkeypatch):
 
     from game.config import get_settings
     from game.db import create_schema, make_engine, make_session_factory, reset_engine
-    from game.deps import login_limiter
+    from game.deps import login_limiter, signup_limiter
+    from game.serving import store
 
     monkeypatch.setenv("BJ_DATABASE_URL", f"sqlite:///{tmp_path / 's.db'}")
     monkeypatch.setenv("BJ_JWT_SECRET", "test-secret-at-least-32-characters-long")
     get_settings.cache_clear()
     reset_engine()
+    store.reset()     # 왜: 전역 모델 저장소가 앞 테스트의 DB 내용을 들고 있을 수 있다
     엔진 = make_engine(f"sqlite:///{tmp_path / 's.db'}")
     create_schema(엔진)
     login_limiter.reset()
+    signup_limiter.reset()  # 왜: 앞 파일의 가입이 1분 창에 남으면 여기 가입이 429가 된다
 
     from game.main import create_app
     with TestClient(create_app()) as 클라:
@@ -175,6 +257,8 @@ def test_전적_API가_숫자를_그대로_준다(tmp_path, monkeypatch):
         with make_session_factory(엔진)() as s:
             게임심기(s, s.get(User, 사용자번호),
                   [(1.0, [(0, 0, 0.0), (1, 0, 0.05)])])
+            # 왜: 규칙이 다른 옛 게임은 목록에서 빠져야 한다(H2를 API 호출부까지 확인)
+            게임심기(s, s.get(User, 사용자번호), [(1.0, [])], fp="ffffffffffff", 순서=1)
 
         통계 = 클라.get("/api/me/stats", headers=머리)
         assert 통계.status_code == 200, 통계.text
@@ -197,11 +281,13 @@ def test_로그인하지_않으면_전적을_못_본다(tmp_path, monkeypatch):
 
     from game.config import get_settings
     from game.db import reset_engine
+    from game.serving import store
 
     monkeypatch.setenv("BJ_DATABASE_URL", f"sqlite:///{tmp_path / 'n.db'}")
     monkeypatch.setenv("BJ_JWT_SECRET", "test-secret-at-least-32-characters-long")
     get_settings.cache_clear()
     reset_engine()
+    store.reset()     # 왜: 전역 모델 저장소가 앞 테스트의 DB 내용을 들고 있을 수 있다
     from game.main import create_app
     with TestClient(create_app()) as 클라:
         assert 클라.get("/api/me/stats").status_code == 401
