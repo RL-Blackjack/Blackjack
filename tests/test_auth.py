@@ -158,6 +158,19 @@ def test_제한기는_빈_키를_지운다():
     assert 제한.key_count() == 1
 
 
+def test_제한기_청소는_창_안_기록이_남은_키를_지우지_않는다():
+    from game.security import RateLimiter
+    제한 = RateLimiter(limit=2, window_seconds=60.0)
+    assert 제한.allow("1.1.1.1", now=0.0) is True
+    assert 제한.allow("1.1.1.1", now=20.0) is True
+    # 왜: 61초에 청소가 돌지만 마지막 기록(20초)이 아직 창 안이다. 키의 첫
+    #     기록만 보고 지우면 20초 기록까지 함께 사라져, 20~62초 한 창에 세
+    #     번(20·61·62)이 허용된다. 한도가 조용히 늘어나는 회귀다.
+    assert 제한.allow("1.1.1.1", now=61.0) is True
+    assert 제한.allow("1.1.1.1", now=62.0) is False
+    assert 제한.key_count() == 1
+
+
 def test_제한기는_여러_스레드에서_한도를_넘지_않는다(monkeypatch):
     import threading
     import time
