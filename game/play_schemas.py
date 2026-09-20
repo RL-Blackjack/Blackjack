@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
 
 class OpponentOut(BaseModel):
@@ -67,8 +67,10 @@ class ActIn(BaseModel):
 
     # 왜 seq를 받는가: 새로고침이나 뒤로가기로 같은 요청이 두 번 갈 수 있다.
     #   서버가 가진 행동 개수와 다르면 409로 막는다.
-    seq: int = Field(ge=0, le=60)
-    action: int = Field(ge=0, le=3)
+    # 왜 StrictInt인가: 파이썬에서 True == 1 이라 bool이 히트(1)로 통과했고,
+    #   "0"과 0.0도 조용히 정수가 되어 기록이 클라이언트 표기에 휘둘렸다.
+    seq: StrictInt = Field(ge=0, le=60)
+    action: StrictInt = Field(ge=0, le=3)
 
 
 class ActOut(BaseModel):
@@ -81,7 +83,9 @@ class ActOut(BaseModel):
 class NewGameIn(BaseModel):
     """새 게임 요청."""
 
-    opponent_model_id: int | None = None
+    # 왜 위아래를 막는가: 거대한 번호가 그대로 DB 드라이버에 닿아 500이 났다.
+    #   모델 번호는 32비트 정수 키라 이 범위 밖은 어차피 있을 수 없다.
+    opponent_model_id: int | None = Field(default=None, ge=1, le=2**31 - 1)
 
 
 class RoundOut(BaseModel):
