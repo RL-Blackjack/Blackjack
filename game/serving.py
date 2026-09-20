@@ -179,7 +179,11 @@ class ModelStore:
             실패: list[LoadFailure] = []
             행들 = list(session.scalars(
                 select(ModelRegistry).where(ModelRegistry.is_serving.is_(True))
-                .order_by(ModelRegistry.id)))
+                .order_by(ModelRegistry.id)
+                # 왜 populate_existing인가: 운영 세션은 expire_on_commit=False라 한 번
+                #   읽은 행이 identity map에 남는다. 그대로면 재학습으로 바뀐 DB의 해시
+                #   대신 옛 해시로 파일을 대조해, 멀쩡한 모델이 sha_mismatch로 빠진다.
+                .execution_options(populate_existing=True)))
             for 행 in 행들:
                 # 왜 이렇게 잇는가: 상대경로 행은 models_dir 기준으로 풀린다. 옛 DB의
                 #   절대경로 행은 pathlib이 오른쪽 절대경로를 그대로 돌려주므로 호환된다.

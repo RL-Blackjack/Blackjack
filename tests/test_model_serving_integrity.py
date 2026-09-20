@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,7 +22,7 @@ import game.serving as 서빙  # noqa: E402
 from blackjack_rl.models.registry import ModelCard, load_policy, save_policy  # noqa: E402
 from blackjack_rl.rules import RULES_V1  # noqa: E402
 from blackjack_rl.state import REACHABLE_KEYS  # noqa: E402
-from game.db import make_engine  # noqa: E402
+from game.db import make_engine, make_session_factory  # noqa: E402
 from game.models import Base, ModelRegistry  # noqa: E402
 from game.serving import ModelArtifactMismatch, ModelStore, file_sha256  # noqa: E402
 
@@ -257,3 +258,29 @@ def test_등록_스크립트는_서버의_해시_함수를_쓴다():
     # 왜: 등록 때와 서빙 때 해시 계산이 한 함수여야 둘이 어긋나지 않는다. 게임 서버가
     #     scripts/를 import하지 않도록 함수는 game/serving.py에 둔다.
     assert 등록스크립트.file_sha256 is 서빙.file_sha256
+
+
+def test_refresh는_세션에_남은_옛_해시를_쓰지_않는다(tmp_path):
+    # 왜: 운영 세션은 expire_on_commit=False라 한 번 읽은 행이 identity map에 남는다.
+    #     그대로 대조하면 재학습으로 바뀐 DB의 해시 대신 옛 해시를 보고, 멀쩡한 모델을
+    #     sha_mismatch로 뺀다(모델이 하나뿐이면 기동·요청이 통째로 죽는다).
+    엔진 = make_engine(f"sqlite:///{tmp_path / 'store.db'}")
+    Base.metadata.create_all(엔진)
+    공장 = make_session_factory(엔진)          # 서버와 같은 expire_on_commit=False
+    with 공장() as 운영, 공장() as 관리자:
+        갑 = 등록(운영, tmp_path, "갑")
+        등록(운영, tmp_path, "을")             # 전멸 RuntimeError 대신 한 개만 빠지게
+        저장소 = ModelStore(tmp_path)
+        저장소.refresh(운영)                    # 운영 세션의 identity map에 두 행이 남는다
+        정책파일(tmp_path / "갑.npz", "갑", 값=1)      # 재학습해 같은 이름으로 덮어쓴다
+        새해시 = file_sha256(tmp_path / "갑.npz")
+        관리자.execute(update(ModelRegistry).where(ModelRegistry.id == 갑.id)
+                     .values(artifact_sha256=새해시))
+        관리자.commit()
+        assert 갑.artifact_sha256 != 새해시     # 운영 세션은 아직 옛 해시를 들고 있다
+
+        올라온수, 실패 = 저장소.refresh(운영)
+        assert (올라온수, 실패) == (2, [])
+        assert 저장소.get(갑.id).artifact_sha256 == 새해시
+        assert np.all(저장소.get(갑.id).policy == 1)
+    엔진.dispose()
