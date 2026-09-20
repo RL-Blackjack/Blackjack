@@ -116,6 +116,20 @@ def test_고아_서로게이트가_든_요청은_422다(클라):
     assert "\ud800" not in r.text and "\ud800" not in r2.text
 
 
+def test_정화_함수는_짝_없는_서로게이트를_치환한다():
+    # 왜 따로 재는가: 지금 라이브러리는 오류 메시지에 원문을 되비추지 않아 위
+    #     테스트만으로는 정화 함수가 실제로 도는지 알 수 없다. 원문이 섞이는
+    #     상황을 직접 만들어 함수가 utf-8로 인코딩 가능한 값을 돌려주는지 본다.
+    from game.main import _실을수있게
+    나쁜값 = "bad \ud800 msg"
+    with pytest.raises(UnicodeEncodeError):
+        나쁜값.encode("utf-8")
+    좋은값 = _실을수있게(나쁜값)
+    좋은값.encode("utf-8")
+    assert "\ud800" not in 좋은값 and 좋은값.startswith("bad ")
+    assert _실을수있게(("body", 3)) == ("body", 3)
+
+
 def test_검증_오류는_입력값을_되돌려주지_않는다(클라):
     # 왜: F4의 표시명 검증이 422를 내면 기본 처리기는 거부한 이름과 ctx를 그대로
     #     싣는다. 본문은 type·loc·msg만 담아 입력을 되비추지 않아야 한다.
@@ -132,7 +146,7 @@ def test_검증_오류는_입력값을_되돌려주지_않는다(클라):
     assert all(set(항목) == {"type", "loc", "msg"} for 항목 in 긴것.json()["detail"])
 
 
-def test_없는_경로_변수도_422로만_끝난다(클라):
+def test_loc에_정수와_비문자열이_있어도_422로만_끝난다(클라):
     # 왜: 처리기가 loc의 정수 인덱스나 문자열 아닌 값을 만나도 죽지 않아야 한다.
     r = 클라.post("/api/auth/login", content=b'{"email":[1,2],"password":1}',
                  headers=제이슨)
