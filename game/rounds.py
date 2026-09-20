@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -71,6 +71,18 @@ def 열린라운드충돌(session: Session, user_id: int) -> HTTPException:
                None if 열린것 is None else 열린것.game_id)
 
 
+def 게임잠금(session: Session, game_id: int, **값: object) -> bool:
+    """끝나지 않은 게임 행을 조건부 UPDATE로 잠근다. 이미 끝났으면 False."""
+    # 왜 UPDATE로 잠그는가: 딜과 끝내기가 서로의 확인을 지나친 뒤 커밋하면 "끝난
+    #   게임에 열린 라운드"가 남아 그 사용자는 어느 요청도 못 하고 영구히 잠겼다
+    #   (배리어 10/10). 두 경로가 같은 games 행을 먼저 UPDATE하면 DB가 둘을 줄
+    #   세운다. 잠근 *뒤에* 확인해야 PostgreSQL에서도 상대가 커밋한 행이 보인다.
+    결과 = session.execute(
+        update(Game).where(Game.id == game_id, Game.ended_at.is_(None))
+        .values(**값).execution_options(synchronize_session=False))
+    return 결과.rowcount == 1
+
+
 def 새라운드(session: Session, game: Game) -> Round:
     """새 라운드를 딜한다. 결정 없이 끝나는 라운드면 바로 닫는다."""
     # 왜 여기서 사용자 전체를 보는가: 라운드를 만드는 유일한 길이다. 게임 생성에서만
@@ -92,7 +104,12 @@ def 새라운드(session: Session, game: Game) -> Round:
     라운드 = Round(game_id=game.id, user_id=game.user_id, round_no=회차, seed=시드,
                   actions="", is_open=True, dealer_up=int(처음.dealer_up),
                   dealer_cards="", net=0.0)
-    사용자번호, 닫았다 = game.user_id, isinstance(처음, Finished)
+    게임번호, 사용자번호, 닫았다 = game.id, game.user_id, isinstance(처음, Finished)
+    # 왜 값을 바꾸지 않는 UPDATE인가: 잠그는 것이 목적이다. 끝내기가 먼저 커밋했으면
+    #   0행이라, 끝난 게임에 라운드를 열지 않는다.
+    if not 게임잠금(session, 게임번호, net_result=Game.net_result):
+        session.rollback()
+        raise 충돌("game_ended", "이미 끝난 게임이다", 게임번호)
     try:
         session.add(라운드)
         session.flush()
@@ -104,7 +121,13 @@ def 새라운드(session: Session, game: Game) -> Round:
         # 왜 flush까지 감싸는가: 유일 인덱스는 INSERT를 보내는 flush에서 터진다.
         #   commit만 감싸면 확인과 쓰기 사이에 끼어든 요청이 500으로 나갔다(10/10).
         session.rollback()
-        raise 열린라운드충돌(session, 사용자번호) from None
+        # 왜 다시 조회하는가: 유일 제약이 둘이다. 사용자의 열린 라운드(open_round —
+        #   화면이 "이어 두기"를 띄운다)와 같은 게임의 (game_id, round_no)(conflict —
+        #   이긴 딜이 내추럴로 바로 닫힌 경우). 전자로 뭉뚱그리면 game_id 없는
+        #   open_round가 나가 화면이 이을 게임을 못 찾는다.
+        if 사용자열린라운드(session, 사용자번호) is not None:
+            raise 열린라운드충돌(session, 사용자번호) from None
+        raise 충돌("conflict", "같은 게임에 딜이 동시에 들어왔다", 게임번호) from None
     if 닫았다:
         # 왜: net_result가 SQL 식이라 커밋 뒤 값이 만료돼 있다. 응답을 만들기 전에
         #   실제 값으로 되읽어 둔다.

@@ -102,7 +102,9 @@ def 대기라운드(클라, 머리, 게임):
 
 def test_상대_모델_목록을_준다(환경):
     클라, _ = 환경
-    모델들 = 클라.get("/api/models").json()
+    r = 클라.get("/api/models")
+    assert r.status_code == 200, r.text
+    모델들 = r.json()
     assert len(모델들) >= 12
     assert {"id", "name", "family", "exact_ev"} <= set(모델들[0])
     # 왜: 가장 잘 두는 모델이 맨 앞이어야 기본 상대가 정해진다.

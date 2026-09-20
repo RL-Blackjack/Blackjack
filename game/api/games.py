@@ -23,6 +23,7 @@ from game.play_schemas import (
     ActIn, ActOut, Feedback, GameOut, NewGameIn, OpponentOut, RoundOut)
 from game.rounds import (
     게임끝남확인,
+    게임잠금,
     게임찾기,
     규칙확인,
     닫기,
@@ -208,10 +209,16 @@ def finish_game(game_id: GameId,
     # 왜 규칙 지문을 안 보는가: 끝내기는 라운드를 재생하지 않는다. 막으면 규칙이
     #   바뀐 옛 게임에 갇혀 새 게임도 시작하지 못한다.
     게임 = 게임찾기(session, game_id, 사용자)
+    # 왜 잠근 뒤에 확인하는가: 조회 뒤 대입하면, 딜이 열림 확인을 지나친 사이에
+    #   끝내기가 커밋돼 끝난 게임에 열린 라운드가 남았다(배리어 10/10). 잠금이 딜의
+    #   커밋을 기다리므로 그 뒤의 조회에는 새 라운드가 보인다.
+    if not 게임잠금(session, 게임.id, ended_at=datetime.now(timezone.utc)):
+        # 왜 204인가: 이미 끝난 게임을 다시 끝내는 것은 같은 요청의 반복이다.
+        session.rollback()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     if 열린라운드(session, 게임) is not None:
         # 왜: 열린 라운드를 둔 채 끝내면 그 결정이 기록 없이 사라진다.
+        session.rollback()
         raise 충돌("open_round", "아직 끝나지 않은 라운드가 있다", 게임.id)
-    if 게임.ended_at is None:
-        게임.ended_at = datetime.now(timezone.utc)
-        session.commit()
+    session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
