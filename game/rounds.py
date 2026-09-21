@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -81,6 +83,26 @@ def 게임잠금(session: Session, game_id: int, **값: object) -> bool:
         update(Game).where(Game.id == game_id, Game.ended_at.is_(None))
         .values(**값).execution_options(synchronize_session=False))
     return 결과.rowcount == 1
+
+
+def 옛라운드정리(session: Session, user_id: int) -> int:
+    """지금과 다른 규칙으로 시작한 게임의 열린 라운드를 닫고 그 게임을 끝낸다."""
+    # 왜 자동인가: 규칙을 바꿔 재배포하면 옛 열린 라운드는 어느 요청으로도 못 닫아
+    #   (act·deal은 rules_changed, finish·새 게임은 open_round) 그 사용자가 영구히
+    #   잠긴다. 운영 절차로 남기면 잊는다. 라운드를 여는 두 길목에서 먼저 치운다.
+    지문 = RULES_V1.fingerprint()
+    옛것들 = session.scalars(
+        select(Round).join(Game, Game.id == Round.game_id)
+        .where(Round.user_id == user_id, Round.is_open.is_(True),
+               Game.rules_fp != 지문)).all()
+    for 라운드 in 옛것들:
+        # 왜 net 0인가: 재생할 수 없는 라운드라 정산이 없다. 카드도 비워 둔다.
+        라운드.is_open = False
+        라운드.net = 0.0
+        게임잠금(session, 라운드.game_id, ended_at=datetime.now(timezone.utc))
+    if 옛것들:
+        session.commit()
+    return len(옛것들)
 
 
 def 새라운드(session: Session, game: Game) -> Round:
