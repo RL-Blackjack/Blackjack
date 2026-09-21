@@ -23,8 +23,7 @@ def test_첫_화면과_자산이_서빙된다(환경):
     r = 클라.get("/")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
     assert "<title>" in r.text
-    # Task 5에서는 둘뿐이다. Task 6이 app.js·table.js, Task 7이 pages.js를 더한다.
-    for 이름 in ["style.css", "logic.js"]:
+    for 이름 in ["style.css", "logic.js", "app.js", "table.js", "pages.js"]:
         assert 클라.get(f"/{이름}").status_code == 200, 이름
 
 
@@ -36,7 +35,10 @@ def test_API_경로는_정적_파일에_가려지지_않는다(환경):
 
 def test_JS가_부르는_API_경로가_전부_존재한다(환경):
     클라, _ = 환경
-    실제 = {r.path for r in 클라.app.routes if getattr(r, "path", "").startswith("/api")}
+    # 왜 openapi()인가: FastAPI 0.141은 include_router 결과를 _IncludedRouter 로 지연해
+    #   app.routes 에 path 가 없다. OpenAPI 문서는 실제 경로를 전부 편다.
+    실제 = {p for p in 클라.app.openapi()["paths"] if p.startswith("/api")}
+    assert len(실제) >= 15, sorted(실제)
     # 왜: 화면이 부르는 경로가 서버에서 이름이 바뀌면 브라우저에서만 404가 난다.
     #   문자열 리터럴을 긁어 라우트와 대조하면 그 어긋남을 테스트가 잡는다.
     # 왜 [^"`]* 인가: 템플릿 리터럴 안의 ${게임.game_id} 처럼 한글이 섞이거나
