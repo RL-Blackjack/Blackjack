@@ -8,6 +8,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
@@ -42,9 +44,19 @@ def test_해싱_자리가_다_차면_503으로_빨리_거절한다(환경, monke
 
 def test_자리는_예외가_나도_돌려준다(monkeypatch):
     # 왜: 검증 중 예외가 자리를 물고 있으면 네 번 뒤에 서버 전체가 503만 낸다.
+    # 왜 해셔를 터뜨리는가: 잘못된 해시는 verify_password 안에서 False로 삼켜져 이 경로를
+    #   못 찌른다. 아무도 잡지 않는 예외를 일부러 내서 finally 가 자리를 돌려주는지 본다.
     자리 = threading.BoundedSemaphore(1)
     monkeypatch.setattr(보안, "_해싱자리", 자리)
-    assert 보안.verify_password("$argon2id$이건해시가아니다", "x") is False
+
+    class 터지는해셔:
+        # 왜 객체째 바꾸는가: argon2의 PasswordHasher는 속성 대입을 막는다(setattr 불가).
+        def verify(self, *_args, **_kw):
+            raise RuntimeError("해셔가 죽었다")
+
+    monkeypatch.setattr(보안, "_해셔", 터지는해셔())
+    with pytest.raises(RuntimeError):
+        보안.verify_password("$argon2id$whatever", "x")
     assert 자리.acquire(blocking=False)
     자리.release()
 
