@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from game.leaderboard import (  # noqa: E402
     CACHE_SECONDS, TTLCache, cached_leaderboard, leaderboard)
 from game.db import make_engine  # noqa: E402
+from game_helpers import fresh_schema, test_db_url  # noqa: E402
 from game.models import Base, Decision, Game, Round, User  # noqa: E402
 from game.stats import MIN_DECISIONS_FOR_RANK  # noqa: E402
 
@@ -27,11 +28,12 @@ FP = "47c403568aa3"
 
 
 @pytest.fixture
-def 세션():
-    e = make_engine("sqlite://")      # 외래키가 켜진 서버와 같은 엔진
-    Base.metadata.create_all(e)
+def 세션(tmp_path):
+    e = make_engine(test_db_url(tmp_path, "lb.db"))      # 외래키가 켜진 서버와 같은 엔진
+    fresh_schema(e)
     with Session(e) as s:
         yield s
+    e.dispose()
 
 
 def 심기(s, 이름, 결정수, 맞은수, *, 손실=0.02, 순손익=0.0, fp=FP):
@@ -268,7 +270,7 @@ def test_리더보드_API가_열려_있다(tmp_path, monkeypatch):
     from game.leaderboard import cache
     from game.serving import store
 
-    주소 = f"sqlite:///{tmp_path / 'lb.db'}"
+    주소 = test_db_url(tmp_path, "lb_api.db")
     monkeypatch.setenv("BJ_DATABASE_URL", 주소)
     monkeypatch.setenv("BJ_JWT_SECRET", "test-secret-at-least-32-characters-long")
     get_settings.cache_clear()
@@ -276,7 +278,7 @@ def test_리더보드_API가_열려_있다(tmp_path, monkeypatch):
     cache.clear()
     store.reset()     # 왜: 전역 모델 저장소가 앞 테스트의 DB 내용을 들고 있을 수 있다
     엔진 = make_engine(주소)
-    create_schema(엔진)
+    fresh_schema(엔진)
     with make_session_factory(엔진)() as s:
         심기(s, "지우", MIN_DECISIONS_FOR_RANK, MIN_DECISIONS_FOR_RANK - 20)
 

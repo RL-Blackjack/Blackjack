@@ -21,17 +21,19 @@ from game.stats import (  # noqa: E402
     recent_games,
     user_stats,
 )
+from game_helpers import fresh_schema, test_db_url  # noqa: E402
 
 FP = "47c403568aa3"
 지금 = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture
-def 세션():
-    e = make_engine("sqlite://")      # 외래키가 켜진 서버와 같은 엔진
-    Base.metadata.create_all(e)
+def 세션(tmp_path):
+    e = make_engine(test_db_url(tmp_path, "stats.db"))      # 외래키가 켜진 서버와 같은 엔진
+    fresh_schema(e)
     with Session(e) as s:
         yield s
+    e.dispose()
 
 
 def 사용자(s, 이름="지우"):
@@ -236,13 +238,14 @@ def test_전적_API가_숫자를_그대로_준다(tmp_path, monkeypatch):
     from game.deps import login_limiter, signup_limiter
     from game.serving import store
 
-    monkeypatch.setenv("BJ_DATABASE_URL", f"sqlite:///{tmp_path / 's.db'}")
+    주소 = test_db_url(tmp_path, "s.db")
+    monkeypatch.setenv("BJ_DATABASE_URL", 주소)
     monkeypatch.setenv("BJ_JWT_SECRET", "test-secret-at-least-32-characters-long")
     get_settings.cache_clear()
     reset_engine()
     store.reset()     # 왜: 전역 모델 저장소가 앞 테스트의 DB 내용을 들고 있을 수 있다
-    엔진 = make_engine(f"sqlite:///{tmp_path / 's.db'}")
-    create_schema(엔진)
+    엔진 = make_engine(주소)
+    fresh_schema(엔진)
     login_limiter.reset()
     signup_limiter.reset()  # 왜: 앞 파일의 가입이 1분 창에 남으면 여기 가입이 429가 된다
 
@@ -283,11 +286,13 @@ def test_로그인하지_않으면_전적을_못_본다(tmp_path, monkeypatch):
     from game.db import reset_engine
     from game.serving import store
 
-    monkeypatch.setenv("BJ_DATABASE_URL", f"sqlite:///{tmp_path / 'n.db'}")
+    주소 = test_db_url(tmp_path, "n.db")
+    monkeypatch.setenv("BJ_DATABASE_URL", 주소)
     monkeypatch.setenv("BJ_JWT_SECRET", "test-secret-at-least-32-characters-long")
     get_settings.cache_clear()
     reset_engine()
     store.reset()     # 왜: 전역 모델 저장소가 앞 테스트의 DB 내용을 들고 있을 수 있다
+    fresh_schema(make_engine(주소))
     from game.main import create_app
     with TestClient(create_app()) as 클라:
         assert 클라.get("/api/me/stats").status_code == 401

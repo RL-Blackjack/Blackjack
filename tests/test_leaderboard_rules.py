@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from game.db import make_engine  # noqa: E402
+from game_helpers import fresh_schema, test_db_url  # noqa: E402
 from game.leaderboard import TOP_N, leaderboard  # noqa: E402
 from game.models import Base, Decision, Game, Round, User  # noqa: E402
 from game.stats import MIN_DECISIONS_FOR_RANK  # noqa: E402
@@ -28,11 +29,13 @@ N = MIN_DECISIONS_FOR_RANK
 
 
 @pytest.fixture
-def 세션():
-    e = make_engine("sqlite://")      # 외래키가 켜진 서버와 같은 엔진
-    Base.metadata.create_all(e)
+def 세션(tmp_path):
+    # 왜 스위치인가: BJ_TEST_PG_URL 이 있으면 실제 PostgreSQL 로 돈다(tests/game_helpers.py).
+    e = make_engine(test_db_url(tmp_path, "lb_rules_unit.db"))      # 외래키가 켜진 서버와 같은 엔진
+    fresh_schema(e)
     with Session(e) as s:
         yield s
+    e.dispose()
     e.dispose()
 
 
@@ -103,7 +106,7 @@ def 클라(tmp_path, monkeypatch):
     from game.serving import store
     from game.deps import login_limiter, signup_limiter
 
-    주소 = f"sqlite:///{tmp_path / 'lb_rules.db'}"
+    주소 = test_db_url(tmp_path, "lb_rules.db")
     monkeypatch.setenv("BJ_DATABASE_URL", 주소)
     monkeypatch.setenv("BJ_JWT_SECRET", "test-secret-at-least-32-characters-long")
     get_settings.cache_clear()
@@ -116,7 +119,7 @@ def 클라(tmp_path, monkeypatch):
     login_limiter.reset()
     signup_limiter.reset()
     엔진 = make_engine(주소)
-    create_schema(엔진)
+    fresh_schema(엔진)
     with make_session_factory(엔진)() as s:
         for i in range(3):
             u = 사용자(s, f"사람{i}")

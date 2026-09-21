@@ -1,0 +1,16 @@
+# deploy/docker-compose.test.yml — 테스트 전용 PostgreSQL. 운영 파일과 섞지 않는다.
+# 왜 5433인가: 개발 PC에 다른 PG가 5432에 있어도 부딪히지 않는다.
+# 왜 127.0.0.1인가: 테스트 DB라도 LAN에 열 이유가 없다.
+services:
+  db-test:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: bj
+      POSTGRES_PASSWORD: bj
+      POSTGRES_DB: bj_test
+      TZ: Asia/Seoul
+    command: ["postgres", "-c", "timezone=Asia/Seoul"]
+    ports:
+      - "127.0.0.1:5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data

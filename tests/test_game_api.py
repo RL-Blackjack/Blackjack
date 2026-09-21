@@ -22,13 +22,15 @@ from game.deps import login_limiter, signup_limiter  # noqa: E402
 from game.main import create_app  # noqa: E402
 from game.models import Decision, Game, Round  # noqa: E402
 from game.serving import store  # noqa: E402
+from game_helpers import fresh_schema, test_db_url  # noqa: E402
 from scripts.register_models import sync_registry  # noqa: E402
 
 
 @pytest.fixture
 def 환경(tmp_path, monkeypatch):
     """빈 파일 DB와 등록된 모델을 갖춘 테스트 클라이언트."""
-    주소 = f"sqlite:///{tmp_path / 'game.db'}"
+    # 왜 스위치인가: BJ_TEST_PG_URL 이 있으면 같은 테스트가 실제 PostgreSQL 로 돈다.
+    주소 = test_db_url(tmp_path, "game.db")
     monkeypatch.setenv("BJ_DATABASE_URL", 주소)
     monkeypatch.setenv("BJ_JWT_SECRET", "test-secret-at-least-32-characters-long")
     # 왜 지우는가: 배포 PC 셸에 구글 클라이언트 ID가 있으면 "구글 설정 없음" 테스트가
@@ -37,7 +39,7 @@ def 환경(tmp_path, monkeypatch):
     get_settings.cache_clear()
     reset_engine()
     엔진 = make_engine(주소)
-    create_schema(엔진)
+    fresh_schema(엔진)
     공장 = make_session_factory(엔진)
     with 공장() as s:
         sync_registry(s, ROOT / "models")

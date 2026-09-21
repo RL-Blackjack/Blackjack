@@ -14,17 +14,23 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from game.config import get_settings  # noqa: E402
-from game.db import reset_engine  # noqa: E402
+from game.db import make_engine, reset_engine  # noqa: E402
+from game_helpers import fresh_schema, test_db_url  # noqa: E402
 
 가입 = {"email": "Jiwoo@Example.com", "password": "hunter2!!", "display_name": "지우"}
 
 
 @pytest.fixture
 def 클라(tmp_path, monkeypatch):
-    monkeypatch.setenv("BJ_DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
+    # 왜 스위치인가: BJ_TEST_PG_URL 이 있으면 같은 테스트가 실제 PostgreSQL 로 돈다.
+    주소 = test_db_url(tmp_path, "api.db")
+    monkeypatch.setenv("BJ_DATABASE_URL", 주소)
     monkeypatch.setenv("BJ_JWT_SECRET", "test-secret-at-least-32-characters-long")
     get_settings.cache_clear()
     reset_engine()
+    엔진 = make_engine(주소)
+    fresh_schema(엔진)     # PG 면 앞 테스트의 행을 지운다. SQLite 새 파일이면 그냥 만든다.
+    엔진.dispose()
 
     from game.deps import login_limiter, signup_limiter
     from game.main import create_app
