@@ -1,0 +1,72 @@
+/* 이 파일은 플레이 화면의 모양만 정한다. 규칙 셋: 카드는 흰 네모, 비활성 버튼은 흐리게,
+   좁은 화면에서는 버튼이 세로로 쌓인다. */
+:root {
+  --초록: #1f6f4a;
+  --초록진함: #144d33;
+  --글자: #1a1a1a;
+  --흐림: #8a8a8a;
+  --테두리: #d0d0d0;
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+  font-family: "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  color: var(--글자);
+  background: #f4f6f4;
+  max-width: 720px;
+  margin-inline: auto;
+}
+
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 1.4rem; margin: 8px 0; }
+h2 { font-size: 1.15rem; margin: 16px 0 8px; }
+h3 { font-size: 1rem; margin: 8px 0 4px; }
+
+nav button, .행동 button, form button, section > button {
+  padding: 8px 14px;
+  border: 1px solid var(--초록진함);
+  border-radius: 6px;
+  background: var(--초록);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+button:disabled { background: #cfd6d1; border-color: #cfd6d1; color: #7a7a7a; cursor: not-allowed; }
+
+form { display: grid; gap: 8px; margin-bottom: 12px; }
+label { display: grid; gap: 4px; font-size: 0.95rem; }
+input, select { padding: 8px; font-size: 1rem; border: 1px solid var(--테두리); border-radius: 6px; }
+
+#알림 { min-height: 1.4em; color: #a33; font-weight: 600; }
+
+.카드들 { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.카드 {
+  display: inline-block;
+  min-width: 34px;
+  padding: 10px 8px;
+  text-align: center;
+  background: #fff;
+  border: 1px solid #333;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 1.1rem;
+  box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.손 { padding: 8px; border: 1px dashed var(--테두리); border-radius: 8px; margin: 6px 0; }
+.손.지금 { border: 2px solid var(--초록); background: #eaf4ee; }
+.순손익 { font-weight: 700; }
+
+.행동 { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+
+table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--테두리); text-align: left; font-size: 0.95rem; }
+tr.나 { background: #eaf4ee; font-weight: 700; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; }
+dt { color: var(--흐림); }
+
+@media (max-width: 480px) {
+  .행동, nav { flex-direction: column; }
+  .행동 button, nav button { width: 100%; }
+}

@@ -9,11 +9,13 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib import import_module
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from game.api import ROUTER_MODULES
 from game.db import create_schema, make_engine, make_session_factory
@@ -21,6 +23,10 @@ from game.security import TooBusy
 from game.serving import store
 
 log = logging.getLogger("game.main")
+# 왜 빌드 도구가 없는가: 학생이 발표에서 설명해야 한다. 파일 셋을 열면 전부 보이는 편이
+#   React 빌드보다 낫다. 화면 상태는 서버가 주는 라운드 JSON 하나뿐이라 프레임워크가 할
+#   일이 없다.
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def _실을수있게(값: Any) -> Any:
@@ -104,6 +110,10 @@ def create_app() -> FastAPI:
                 raise
             continue
         app.include_router(모듈.router)
+
+    # 왜 맨 뒤인가: 정적 마운트는 "/" 전체를 받는다. 라우터보다 먼저 붙이면 /api 도
+    #   삼킨다. html=True 라 "/" 가 index.html 이 된다.
+    app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
     return app
 

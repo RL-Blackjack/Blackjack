@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>블랙잭 강화학습 대전</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>블랙잭 강화학습 대전</h1>
+  <nav id="nav" hidden>
+    <button type="button" data-이동="로비">로비</button>
+    <button type="button" data-이동="전적">내 전적</button>
+    <button type="button" data-이동="순위">순위표</button>
+    <button type="button" id="버튼-로그아웃">로그아웃</button>
+  </nav>
+</header>
+<p id="알림" role="status"></p>
+
+<section data-화면="로그인">
+  <h2>로그인</h2>
+  <form id="폼-로그인">
+    <label>이메일 <input name="email" type="email" required autocomplete="username"></label>
+    <label>비밀번호 <input name="password" type="password" required minlength="8" autocomplete="current-password"></label>
+    <button type="submit">로그인</button>
+  </form>
+  <div id="google-button"></div>
+  <h2>처음이면 가입</h2>
+  <form id="폼-가입">
+    <label>이메일 <input name="email" type="email" required autocomplete="username"></label>
+    <label>비밀번호(8자 이상) <input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+    <label>표시명 <input name="display_name" required maxlength="64"></label>
+    <button type="submit">가입하고 시작</button>
+  </form>
+</section>
+
+<section data-화면="로비" hidden>
+  <h2>상대를 고르세요</h2>
+  <p id="로비-요약"></p>
+  <label>상대 AI <select id="선택-상대"></select></label>
+  <button type="button" id="버튼-새게임">새 게임</button>
+  <button type="button" id="버튼-이어하기" hidden>하던 게임 이어 하기</button>
+</section>
+
+<section data-화면="테이블" hidden>
+  <p><span id="상대이름"></span> · <span id="회차"></span></p>
+  <div class="딜러"><h3>딜러</h3><div id="딜러카드" class="카드들"></div></div>
+  <div id="손들"></div>
+  <p id="피드백"></p>
+  <div class="행동">
+    <button type="button" id="행동-0">스탠드</button>
+    <button type="button" id="행동-1">히트</button>
+    <button type="button" id="행동-2">더블</button>
+    <button type="button" id="행동-3">스플릿</button>
+  </div>
+  <button type="button" id="버튼-다음라운드" hidden>다음 라운드</button>
+  <button type="button" id="버튼-게임끝">게임 끝내기</button>
+</section>
+
+<section data-화면="전적" hidden>
+  <h2>내 전적</h2>
+  <dl id="전적표"></dl>
+  <table><thead><tr><th>게임</th><th>상대</th><th>라운드</th><th>순손익</th><th>일치율</th></tr></thead>
+    <tbody id="게임목록-몸"></tbody></table>
+  <h3>계정</h3>
+  <form id="폼-비밀번호">
+    <label>현재 비밀번호 <input name="current_password" type="password" required autocomplete="current-password"></label>
+    <label>새 비밀번호 <input name="new_password" type="password" required minlength="8" autocomplete="new-password"></label>
+    <button type="submit">비밀번호 바꾸기</button>
+  </form>
+  <button type="button" id="버튼-전체로그아웃">모든 기기에서 로그아웃</button>
+</section>
+
+<section data-화면="순위" hidden>
+  <h2>순위표 — 기본전략 일치율 순</h2>
+  <p>승률이 아니라 <strong>정답과 얼마나 같게 두었는가</strong>로 줄을 세웁니다. 200결정 이상만 오릅니다.</p>
+  <table><thead><tr><th>#</th><th>이름</th><th>게임</th><th>결정</th><th>일치율</th><th>결정당 손실</th></tr></thead>
+    <tbody id="순위-몸"></tbody></table>
+</section>
+
+<script src="/logic.js"></script>
+<script src="/app.js"></script>
+<script src="/table.js"></script>
+<script src="/pages.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer onload="구글준비()"></script>
+</body>
+</html>
