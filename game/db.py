@@ -39,7 +39,10 @@ def make_engine(url: str | None = None) -> Engine:
 
     # 왜 pool_pre_ping인가: 집 PC가 절전에서 깨거나 PG가 재시작하면 죽은 연결이
     #   풀에 남는다. 쓰기 직전에 한 번 확인하면 첫 요청만 실패하는 일을 막는다.
-    return create_engine(주소, pool_pre_ping=True, future=True)
+    # 왜 5+5인가: uvicorn 워커 1개의 스레드 풀이 40이지만 요청 대부분이 1ms 안에
+    #   끝나 연결 10개면 충분하다. PG 기본 max_connections 100 안에서 백업·psql 자리를 남긴다.
+    return create_engine(주소, pool_pre_ping=True, pool_size=5, max_overflow=5,
+                         pool_timeout=10, future=True)
 
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:

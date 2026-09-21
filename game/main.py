@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib import import_module
@@ -65,7 +66,14 @@ async def _수명(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     """앱을 만들고 있는 라우터를 전부 붙인다."""
-    app = FastAPI(title="블랙잭 강화학습 대전", version="1.0.0", lifespan=_수명)
+    # 왜 get_settings()를 안 부르는가: 이 파일은 모듈 끝에서 app = create_app() 을 실행한다.
+    #   여기서 설정을 읽으면 BJ_JWT_SECRET 없는 셸에서 import 자체가 죽어 테스트 수집이
+    #   통째로 깨진다(test_game_api.py 는 모듈 상단에서 import 한다). prod 의 DB URL 검증은
+    #   lifespan 의 get_settings() 가 기동 때 그대로 한다.
+    운영 = os.environ.get("BJ_ENV", "dev").strip().lower() == "prod"
+    # 왜 prod 에서 끄는가(M14): /docs 는 모든 경로와 모양을 공개한다. 운영에서 얻는 게 없다.
+    문서 = {"docs_url": None, "redoc_url": None, "openapi_url": None} if 운영 else {}
+    app = FastAPI(title="블랙잭 강화학습 대전", version="1.0.0", lifespan=_수명, **문서)
 
     @app.exception_handler(RequestValidationError)
     async def _검증오류(request: Request, exc: RequestValidationError) -> JSONResponse:
