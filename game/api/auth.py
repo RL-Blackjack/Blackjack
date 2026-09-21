@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic_core import PydanticCustomError
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -17,10 +18,13 @@ from sqlalchemy.orm import Session
 from game.config import get_settings
 from game.db import get_session
 from game.deps import current_user, login_limiter, signup_limiter
+from game.google_auth import verify_google_id_token
 from game.models import RefreshToken, User
 from game.schemas import (
-    LoginIn, PasswordChangeIn, RefreshIn, SignupIn, TokenOut, UserOut)
+    DISPLAY_NAME_MAX, AuthConfigOut, GoogleIn, LoginIn, PasswordChangeIn, RefreshIn,
+    SignupIn, TokenOut, UserOut, 표시명정리)
 from game.security import (
+    TokenInvalid,
     hash_password,
     hash_refresh_token,
     make_access_token,
@@ -207,6 +211,61 @@ def change_password(몸체: PasswordChangeIn, request: Request,
     사용자.password_hash = hash_password(몸체.new_password)
     session.commit()
     _전부폐기(session, 사용자)
+    return _토큰발급(session, 사용자)
+
+
+@router.get("/config", response_model=AuthConfigOut)
+def auth_config() -> AuthConfigOut:
+    """구글 버튼을 그릴지 화면이 묻는다. 클라이언트 ID는 비밀이 아니다."""
+    아이디 = get_settings().google_client_id
+    return AuthConfigOut(google_client_id=아이디 or None)
+
+
+@router.post("/google", response_model=TokenOut)
+def google_login(몸체: GoogleIn, request: Request, response: Response,
+                 session: Annotated[Session, Depends(get_session)]) -> TokenOut:
+    """구글 ID 토큰으로 로그인한다. 처음이면 계정을 만들고(201) 같은 이메일이면 합친다."""
+    설정 = get_settings()
+    if not 설정.google_client_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "구글 로그인을 켜지 않았다")
+    아이피 = request.client.host if request.client else "unknown"
+    if not login_limiter.allow(아이피):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            "로그인 시도가 너무 잦다. 잠시 뒤 다시 시도하라")
+    try:
+        신원 = verify_google_id_token(몸체.credential, client_id=설정.google_client_id)
+    except TokenInvalid as e:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "구글 로그인에 실패했다") from e
+    if not 신원.email_verified:
+        # 왜: 검증 안 된 이메일로 합치면 남의 자체 계정을 가로챌 수 있다.
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "구글 로그인에 실패했다")
+
+    이메일 = normalize_email(신원.email)
+    사용자 = session.scalar(select(User).where(User.google_sub == 신원.sub))
+    if 사용자 is None:
+        사용자 = session.scalar(select(User).where(User.email == 이메일))
+        if 사용자 is not None:
+            # 합치기(설계서 §5.2): 만든 방식(auth_provider)은 그대로 두고 구글만 붙인다.
+            사용자.google_sub = 신원.sub
+        else:
+            try:
+                이름 = 표시명정리(신원.name)
+            except PydanticCustomError:
+                # 왜: 구글이 준 이름이 비었거나 보이지 않는 글자면 이메일 앞부분을 쓴다.
+                이름 = 이메일.split("@", 1)[0][:DISPLAY_NAME_MAX] or "player"
+            사용자 = User(email=이메일, display_name=이름, auth_provider="google",
+                        password_hash=None, google_sub=신원.sub,
+                        created_at=datetime.now(timezone.utc))
+            session.add(사용자)
+            response.status_code = status.HTTP_201_CREATED
+        try:
+            session.commit()
+        except IntegrityError:
+            # 왜: 같은 구글 계정이 동시에 두 번 오면 한쪽의 INSERT가 유일 제약에 걸린다.
+            session.rollback()
+            사용자 = session.scalar(select(User).where(User.google_sub == 신원.sub))
+            if 사용자 is None:
+                raise HTTPException(status.HTTP_409_CONFLICT, "다시 시도하라") from None
     return _토큰발급(session, 사용자)
 
 

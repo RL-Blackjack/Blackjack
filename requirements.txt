@@ -27,3 +27,7 @@ httpx==0.28.1
 pytest-asyncio==1.4.0
 # 왜: pydantic의 EmailStr은 이 패키지가 없으면 ImportError를 낸다.
 email-validator==2.3.0
+
+# W10 게임 프런트·배포. game/ 과 deploy/ 에서만 쓴다.
+# 왜 cryptography인가: 구글 ID 토큰은 RS256 서명이라 PyJWT가 이 패키지를 요구한다.
+cryptography==50.0.1

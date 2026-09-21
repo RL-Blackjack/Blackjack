@@ -31,6 +31,9 @@ def 환경(tmp_path, monkeypatch):
     주소 = f"sqlite:///{tmp_path / 'game.db'}"
     monkeypatch.setenv("BJ_DATABASE_URL", 주소)
     monkeypatch.setenv("BJ_JWT_SECRET", "test-secret-at-least-32-characters-long")
+    # 왜 지우는가: 배포 PC 셸에 구글 클라이언트 ID가 있으면 "구글 설정 없음" 테스트가
+    #   환경에 따라 갈린다. 구글 테스트는 자기 픽스처에서 다시 넣는다.
+    monkeypatch.delenv("BJ_GOOGLE_CLIENT_ID", raising=False)
     get_settings.cache_clear()
     reset_engine()
     엔진 = make_engine(주소)

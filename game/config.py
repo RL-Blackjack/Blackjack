@@ -32,6 +32,9 @@ class Settings:
     login_rate_per_minute: int = 10
     models_dir: Path = ROOT / "models"
     artifacts_dir: Path = ROOT / "artifacts"
+    # 왜 빈 문자열이 기본인가: 구글 클라이언트 ID가 없으면 구글 버튼을 아예 안 그린다.
+    #   개발 PC에서는 없는 것이 정상이고, 비밀값이 아니라 .env에 그대로 적어도 된다.
+    google_client_id: str = ""
 
 
 @lru_cache(maxsize=1)
@@ -46,4 +49,5 @@ def get_settings() -> Settings:
     return Settings(
         database_url=os.environ.get("BJ_DATABASE_URL", DEFAULT_SQLITE_URL),
         jwt_secret=비밀키,
+        google_client_id=os.environ.get("BJ_GOOGLE_CLIENT_ID", "").strip(),
     )

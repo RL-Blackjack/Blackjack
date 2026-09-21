@@ -15,7 +15,32 @@ DISPLAY_NAME_MAX: int = 64
 
 # 왜 따로 적는가: 한글 채움 문자들은 범주가 Lo(글자)라 범주 검사로는 걸리지
 #   않는데, 화면에는 아무것도 보이지 않아 빈 이름·남의 이름 흉내에 쓰인다.
-보이지않는글자: frozenset[str] = frozenset("\u115f\u1160\u3164\uffa0")
+보이지않는글자: frozenset[str] = frozenset("ᅟᅠㅤﾠ")
+
+
+def 표시명정리(값: str) -> str:
+    """NFC로 맞추고 앞뒤 공백을 떼어, 보이는 글자만 있는 이름인지 본다. 아니면 PydanticCustomError."""
+    # 왜 모듈 함수인가: 가입 검증기와 구글 로그인(이름을 구글이 준다)이 같은 규칙을 쓴다.
+    # 왜 검증기에서 떼는가: Field의 길이 검사는 strip보다 먼저 돈다. 핸들러에서
+    #   떼면 "   "이 길이 검사를 통과한 뒤 빈 이름('')으로 저장된다(실측 201).
+    이름 = unicodedata.normalize("NFC", 값).strip()
+    for 글자 in 이름:
+        범주 = unicodedata.category(글자)
+        # 왜 C*·Zl·Zp인가: 제어(Cc)·서식(Cf, 폭 없는 공백·방향 제어)·서로게이트
+        #   ·사용자 정의·미할당 글자와 줄/문단 구분자는 리더보드 화면을 깨거나
+        #   보이지 않는 차이로 남의 이름을 흉내 내는 데 쓰인다.
+        if 범주[0] == "C" or 범주 in ("Zl", "Zp") or 글자 in 보이지않는글자:
+            raise PydanticCustomError(
+                "display_name_invisible", "표시명에 제어 문자나 보이지 않는 문자가 있다")
+    if not 이름:
+        raise PydanticCustomError("display_name_blank", "표시명이 비어 있다")
+    # 왜 다시 재는가: NFC가 글자를 늘릴 수 있다(U+FB2C 한 글자 → 세 글자).
+    #   정규화한 값을 저장하므로 64자 칸도 정규화한 값으로 지킨다.
+    if len(이름) > DISPLAY_NAME_MAX:
+        raise PydanticCustomError(
+            "display_name_too_long", "표시명은 {max}자를 넘을 수 없다",
+            {"max": DISPLAY_NAME_MAX})
+    return 이름
 
 
 class SignupIn(BaseModel):
@@ -30,27 +55,19 @@ class SignupIn(BaseModel):
     @field_validator("display_name")
     @classmethod
     def _표시명_검사(cls, 값: str) -> str:
-        """NFC로 맞추고 앞뒤 공백을 떼어, 보이는 글자만 있는 이름인지 본다."""
-        # 왜 검증기에서 떼는가: Field의 길이 검사는 strip보다 먼저 돈다. 핸들러에서
-        #   떼면 "   "이 길이 검사를 통과한 뒤 빈 이름('')으로 저장된다(실측 201).
-        이름 = unicodedata.normalize("NFC", 값).strip()
-        for 글자 in 이름:
-            범주 = unicodedata.category(글자)
-            # 왜 C*·Zl·Zp인가: 제어(Cc)·서식(Cf, 폭 없는 공백·방향 제어)·서로게이트
-            #   ·사용자 정의·미할당 글자와 줄/문단 구분자는 리더보드 화면을 깨거나
-            #   보이지 않는 차이로 남의 이름을 흉내 내는 데 쓰인다.
-            if 범주[0] == "C" or 범주 in ("Zl", "Zp") or 글자 in 보이지않는글자:
-                raise PydanticCustomError(
-                    "display_name_invisible", "표시명에 제어 문자나 보이지 않는 문자가 있다")
-        if not 이름:
-            raise PydanticCustomError("display_name_blank", "표시명이 비어 있다")
-        # 왜 다시 재는가: NFC가 글자를 늘릴 수 있다(U+FB2C 한 글자 → 세 글자).
-        #   정규화한 값을 저장하므로 64자 칸도 정규화한 값으로 지킨다.
-        if len(이름) > DISPLAY_NAME_MAX:
-            raise PydanticCustomError(
-                "display_name_too_long", "표시명은 {max}자를 넘을 수 없다",
-                {"max": DISPLAY_NAME_MAX})
-        return 이름
+        return 표시명정리(값)
+
+
+class GoogleIn(BaseModel):
+    """구글 버튼이 준 ID 토큰."""
+
+    credential: str = Field(min_length=1, max_length=4096)
+
+
+class AuthConfigOut(BaseModel):
+    """화면이 로그인 버튼을 그리는 데 필요한 공개 설정."""
+
+    google_client_id: str | None
 
 
 class LoginIn(BaseModel):
