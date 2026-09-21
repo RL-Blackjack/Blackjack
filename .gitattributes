@@ -1,0 +1,5 @@
+# 왜: core.autocrlf=true 환경에서 셸 스크립트와 Caddyfile 이 CRLF 로 저장·체크아웃되면
+#   컨테이너 안의 dash·Caddy 가 첫 줄에서 죽는다.
+*.sh text eol=lf
+deploy/Caddyfile text eol=lf
+deploy/initdb/* text eol=lf

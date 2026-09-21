@@ -1,0 +1,13 @@
+.venv/
+venv/
+*.db
+*.db-*
+deploy/.env
+deploy/.env.*
+deploy/backups/
+.git/
+docs/
+.superpowers/
+__pycache__/
+*.py[cod]
+media/*.mp4

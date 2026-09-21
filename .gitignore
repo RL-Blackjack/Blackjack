@@ -37,3 +37,6 @@ media/*.mov
 .env.*
 !.env.example
 .superpowers/
+
+# 배포 백업 파일(사람 데이터). 저장소에 올리지 않는다.
+deploy/backups/

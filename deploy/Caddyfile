@@ -1,0 +1,13 @@
+# deploy/Caddyfile — 도메인만 적으면 인증서를 자동으로 받는다(설계서 §8.1 "왜 Caddy 인가").
+{$PLAY_HOST} {
+	encode gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	header X-Content-Type-Options nosniff
+	reverse_proxy api:8000
+}
+
+{$RESEARCH_HOST} {
+	encode gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy research:8501
+}

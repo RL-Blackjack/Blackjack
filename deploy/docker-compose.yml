@@ -1,0 +1,76 @@
+# deploy/docker-compose.yml — 설계서 §8.1. `docker compose -f deploy/docker-compose.yml up -d --build`
+# 비밀값은 같은 폴더의 .env 에서 읽는다(.env.example 을 복사해 채운다).
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bj                  # 관리자(슈퍼유저). 백업과 초기화에만 쓴다.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: bj
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      TZ: Asia/Seoul
+    command: ["postgres", "-c", "timezone=Asia/Seoul"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # 왜(설계서 §8.2 "전용 계정, 최소 권한"): 앱은 슈퍼유저가 아니라 bj_app 으로 붙는다.
+      #   이 폴더의 스크립트는 데이터 볼륨이 비어 있을 때 한 번만 실행된다.
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bj -d bj"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # 왜 ports 가 없는가: 설계서 §8.1 — DB 는 내부망에서만 보인다.
+
+  api:
+    build: { context: .., dockerfile: deploy/Dockerfile }
+    restart: unless-stopped
+    environment:
+      BJ_ENV: prod
+      BJ_DATABASE_URL: postgresql+psycopg://bj_app:${APP_DB_PASSWORD}@db:5432/bj
+      BJ_JWT_SECRET: ${BJ_JWT_SECRET}
+      BJ_GOOGLE_CLIENT_ID: ${BJ_GOOGLE_CLIENT_ID}
+    # 왜 --forwarded-allow-ips=* 인가(I3): 이 포트는 compose 내부망에만 있고 그 망에서
+    #   요청을 보내는 것은 Caddy 뿐이다. XFF 를 위조할 수 있는 상대가 없다.
+    # 왜 --workers 1 인가: 로그인·가입 제한기가 프로세스 메모리에 산다.
+    command: ["sh", "-c", "python scripts/register_models.py && uvicorn game.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=*"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  research:
+    build: { context: .., dockerfile: deploy/Dockerfile }
+    restart: unless-stopped
+    command: ["streamlit", "run", "app/streamlit_app.py", "--server.port", "8501", "--server.address", "0.0.0.0", "--server.headless", "true"]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PLAY_HOST: ${PLAY_HOST}
+      RESEARCH_HOST: ${RESEARCH_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api, research]
+
+  backup:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    entrypoint: ["sh", "/backup.sh"]
+    depends_on:
+      db: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
