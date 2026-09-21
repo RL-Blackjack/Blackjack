@@ -25,29 +25,58 @@ REFRESH_BYTES: int = 32
 #   있다. 실측 해싱 1회가 29ms이므로 객체 생성까지 요청마다 할 이유가 없다.
 _해셔 = PasswordHasher()
 
+# 왜 4개인가: 해시 하나가 64MiB다. 워커 스레드 40개가 전부 argon2에 들어가면
+#   2.5GiB인데(검증 I4 실측 2.7GiB), 4개면 256MiB로 묶인다. 사람 로그인은 초당
+#   4 × (1000/29) ≈ 130건까지 받으므로 발표 규모에 충분하다.
+ARGON2_CONCURRENCY: int = 4
+# 왜 2초인가: 자리가 2초 안에 안 나면 폭주 중이다. 기다리게 두면 스레드 풀이 말라
+#   health까지 멈춘다. 빨리 503을 주고 Retry-After로 물러나게 한다.
+ARGON2_WAIT_SECONDS: float = 2.0
+_해싱자리 = threading.BoundedSemaphore(ARGON2_CONCURRENCY)
+
 
 class TokenInvalid(Exception):
     """토큰이 만료됐거나 서명이 맞지 않거나 형식이 틀렸다."""
 
 
+class TooBusy(Exception):
+    """argon2 자리가 다 차서 기다리다 포기했다. main.py가 503으로 바꾼다."""
+
+
+def _자리잡고(작업):
+    """세마포어 자리를 얻어 작업을 돌린다. 못 얻으면 TooBusy."""
+    # 왜 모듈 전역을 호출 시점에 읽는가: 테스트가 _해싱자리·ARGON2_WAIT_SECONDS를
+    #   바꿔 끼운다. 기본 인자로 굳히면 바꿔 끼운 값이 안 보인다.
+    if not _해싱자리.acquire(timeout=ARGON2_WAIT_SECONDS):
+        raise TooBusy
+    try:
+        return 작업()
+    finally:
+        _해싱자리.release()
+
+
 def hash_password(plain: str) -> str:
     """평문 비밀번호를 argon2id 해시로 바꾼다. 같은 값도 매번 다르게 나온다."""
-    return _해셔.hash(plain)
+    return _자리잡고(lambda: _해셔.hash(plain))
 
 
 def verify_password(hashed: str, plain: str) -> bool:
     """해시와 평문이 맞는지 본다. 어떤 실패든 False다(예외를 밖으로 내지 않는다)."""
-    try:
-        return _해셔.verify(hashed, plain)
-    except (VerifyMismatchError, VerificationError, InvalidHashError, UnicodeError):
-        # 왜 전부 False인가: 예외가 밖으로 나가면 500이 되고, 틀린 비밀번호(401)와
-        #   구분되는 그 차이만으로 계정이 있는지 없는지가 샌다.
-        # 왜 UnicodeError도 잡는가: argon2-cffi 25.1.0의 verify()는 형식 검사보다
-        #   먼저 hash 문자열을 ascii로 무조건 인코딩한다(_password_hasher.py:244).
-        #   비ASCII 문자가 든 가짜 해시는 InvalidHashError가 아니라
-        #   UnicodeEncodeError로 먼저 죽는다. 라이브러리 docstring이 약속한
-        #   예외 목록에는 없지만 실측으로 확인했다.
-        return False
+    def 확인() -> bool:
+        try:
+            return _해셔.verify(hashed, plain)
+        except (VerifyMismatchError, VerificationError, InvalidHashError, UnicodeError):
+            # 왜 전부 False인가: 예외가 밖으로 나가면 500이 되고, 틀린 비밀번호(401)와
+            #   구분되는 그 차이만으로 계정이 있는지 없는지가 샌다.
+            # 왜 UnicodeError도 잡는가: argon2-cffi 25.1.0의 verify()는 형식 검사보다
+            #   먼저 hash 문자열을 ascii로 무조건 인코딩한다(_password_hasher.py:244).
+            #   비ASCII 문자가 든 가짜 해시는 InvalidHashError가 아니라
+            #   UnicodeEncodeError로 먼저 죽는다. 라이브러리 docstring이 약속한
+            #   예외 목록에는 없지만 실측으로 확인했다.
+            return False
+    # 왜 TooBusy는 여기서 안 잡는가: 자리가 없는 것은 비밀번호 문제가 아니라 서버
+    #   사정이다. False로 바꾸면 폭주 중에 모든 로그인이 "틀린 비밀번호"가 된다.
+    return _자리잡고(확인)
 
 
 def normalize_email(raw: str) -> str:

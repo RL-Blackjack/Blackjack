@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from game.api import ROUTER_MODULES
 from game.db import create_schema, make_engine, make_session_factory
+from game.security import TooBusy
 from game.serving import store
 
 log = logging.getLogger("game.main")
@@ -72,6 +73,14 @@ def create_app() -> FastAPI:
                 "msg": _실을수있게(str(오류.get("msg", "")))}
                for 오류 in exc.errors()]
         return JSONResponse(status_code=422, content={"detail": 항목})
+
+    @app.exception_handler(TooBusy)
+    async def _바쁨(request: Request, exc: TooBusy) -> JSONResponse:
+        """argon2 자리가 다 찼다. 503과 Retry-After로 물러나게 한다."""
+        # 왜 503인가: 요청이 틀린 게 아니라 서버가 지금 못 받는 것이다. Retry-After 1초면
+        #   해시 하나(29ms)의 수십 배라 자리가 나 있을 가능성이 높다.
+        return JSONResponse(status_code=503, headers={"Retry-After": "1"},
+                            content={"detail": "서버가 바쁘다. 잠시 뒤 다시 시도하라"})
 
     @app.get("/api/health")
     def health() -> dict[str, str | int]:
