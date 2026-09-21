@@ -39,12 +39,14 @@ def current_user(
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "로그인이 필요하다")
     try:
-        사용자번호 = read_access_token(authorization.split(" ", 1)[1].strip())
+        사용자번호, 버전 = read_access_token(authorization.split(" ", 1)[1].strip())
     except TokenInvalid as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "로그인이 필요하다") from e
 
     사용자 = session.get(User, 사용자번호)
-    if 사용자 is None:
+    if 사용자 is None or 사용자.token_version != 버전:
         # 왜: 토큰은 멀쩡한데 계정이 지워졌을 수 있다. 그때도 401이다.
+        # 왜 버전도 보는가: 전체 로그아웃·비밀번호 변경이 버전을 올린다. 옛 토큰은
+        #   서명이 멀쩡해도 여기서 죽는다.
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "로그인이 필요하다")
     return 사용자

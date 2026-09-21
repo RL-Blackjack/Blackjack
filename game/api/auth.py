@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,8 @@ from game.config import get_settings
 from game.db import get_session
 from game.deps import current_user, login_limiter, signup_limiter
 from game.models import RefreshToken, User
-from game.schemas import LoginIn, RefreshIn, SignupIn, TokenOut, UserOut
+from game.schemas import (
+    LoginIn, PasswordChangeIn, RefreshIn, SignupIn, TokenOut, UserOut)
 from game.security import (
     hash_password,
     hash_refresh_token,
@@ -41,6 +42,10 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 #   import 때 새로 만들므로 비용이 저절로 따라간다.
 _더미해시 = hash_password(secrets.token_urlsafe(32))
 
+# 왜 30초인가: 같은 브라우저의 다른 탭이 옛 리프레시 토큰을 들고 있다가 보내는 데
+#   걸리는 시간은 길어야 몇 초다. 30초를 넘겨 옛 토큰이 오면 복사해 간 쪽이라고 본다.
+ROTATION_GRACE_SECONDS: int = 30
+
 
 def _토큰발급(session: Session, user: User) -> TokenOut:
     """액세스 토큰을 만들고 리프레시 토큰을 DB에 해시로 저장한다."""
@@ -52,7 +57,24 @@ def _토큰발급(session: Session, user: User) -> TokenOut:
         + timedelta(days=get_settings().refresh_token_days),
     ))
     session.commit()
-    return TokenOut(access_token=make_access_token(user.id), refresh_token=원문)
+    return TokenOut(access_token=make_access_token(user.id, user.token_version),
+                    refresh_token=원문)
+
+
+def _전부폐기(session: Session, user: User) -> None:
+    """이 사용자의 살아 있는 리프레시 토큰을 모두 폐기하고 액세스 토큰 버전을 올린다."""
+    session.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(timezone.utc))
+        .execution_options(synchronize_session=False))
+    # 왜 SQL 식인가: 두 요청이 겹쳐도 +1이 두 번 적용돼야 한다.
+    session.execute(
+        update(User).where(User.id == user.id)
+        .values(token_version=User.token_version + 1)
+        .execution_options(synchronize_session=False))
+    session.commit()
+    session.refresh(user)
 
 
 @router.post("/signup", response_model=TokenOut,
@@ -112,36 +134,80 @@ def login(몸체: LoginIn, request: Request,
 @router.post("/refresh", response_model=TokenOut)
 def refresh(몸체: RefreshIn,
             session: Annotated[Session, Depends(get_session)]) -> TokenOut:
-    """리프레시 토큰으로 새 액세스 토큰을 받는다."""
+    """리프레시 토큰을 새것으로 바꾸고 새 액세스 토큰을 준다. 옛 토큰은 폐기한다."""
     기록 = session.scalar(select(RefreshToken).where(
         RefreshToken.token_hash == hash_refresh_token(몸체.refresh_token)))
-    if 기록 is None or 기록.revoked_at is not None:
+    if 기록 is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "다시 로그인하라")
-    if 기록.expires_at <= datetime.now(timezone.utc):
-        # 왜 그대로 비교하는가: expires_at은 UTCDateTime 칸이라 SQLite(naive)든
-        #   PG(연결 TimeZone 기준 aware)든 aware UTC로 온다. 예전처럼 tzinfo를
-        #   덮어쓰면 Asia/Seoul 연결에서 만료가 9시간 늦어진다.
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "다시 로그인하라")
-
     사용자 = session.get(User, 기록.user_id)
-    if 사용자 is None:
+    지금 = datetime.now(timezone.utc)
+    if 기록.revoked_at is not None:
+        # 왜 유예를 두는가: 회전 직후 30초 안의 재사용은 겹친 요청(다른 탭)이다.
+        #   그 뒤의 재사용은 누군가 복사해 갔다는 신호라 전부 끊는다.
+        # 왜 그대로 비교하는가: revoked_at은 UTCDateTime 칸이라 SQLite든 PG든
+        #   aware UTC로 온다. tzinfo를 덮어쓰면 Asia/Seoul 연결에서 9시간 어긋난다.
+        if (사용자 is not None
+                and (지금 - 기록.revoked_at).total_seconds() > ROTATION_GRACE_SECONDS):
+            _전부폐기(session, 사용자)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "다시 로그인하라")
-    return TokenOut(access_token=make_access_token(사용자.id),
-                    refresh_token=몸체.refresh_token)
+    if 기록.expires_at <= 지금 or 사용자 is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "다시 로그인하라")
+    # 왜 조건부 UPDATE인가: 같은 토큰이 동시에 두 번 오면 파이썬 확인은 둘 다 통과한다.
+    #   DB가 한 번만 성공시키고, 진 쪽은 위의 유예 규칙으로 401만 받는다.
+    회전 = session.execute(
+        update(RefreshToken)
+        .where(RefreshToken.id == 기록.id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=지금).execution_options(synchronize_session=False))
+    if 회전.rowcount != 1:
+        session.rollback()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "다시 로그인하라")
+    session.commit()
+    return _토큰발급(session, 사용자)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(몸체: RefreshIn,
            session: Annotated[Session, Depends(get_session)]) -> Response:
-    """리프레시 토큰을 폐기한다. 없는 토큰이어도 204다."""
+    """리프레시 토큰을 지운다. 없는 토큰이어도 204다."""
     기록 = session.scalar(select(RefreshToken).where(
         RefreshToken.token_hash == hash_refresh_token(몸체.refresh_token)))
-    if 기록 is not None and 기록.revoked_at is None:
-        기록.revoked_at = datetime.now(timezone.utc)
+    if 기록 is not None:
+        # 왜 폐기 표시가 아니라 삭제인가: 로그아웃한 토큰을 다른 탭이 다시 보내는 것은
+        #   정상이다. 행이 없으면 평범한 401로 끝나고, 도난 감지는 회전된 토큰에만 걸린다.
+        session.delete(기록)
         session.commit()
     # 왜 없어도 204인가: "그 토큰은 존재하지 않는다"를 알려 주면 토큰을 찍어
     #   맞히는 데 쓸 수 있다.
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+def logout_all(사용자: Annotated[User, Depends(current_user)],
+               session: Annotated[Session, Depends(get_session)]) -> Response:
+    """모든 기기에서 로그아웃한다. 리프레시 토큰 전부 폐기 + 액세스 토큰 버전 올림."""
+    _전부폐기(session, 사용자)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/password", response_model=TokenOut)
+def change_password(몸체: PasswordChangeIn, request: Request,
+                    사용자: Annotated[User, Depends(current_user)],
+                    session: Annotated[Session, Depends(get_session)]) -> TokenOut:
+    """비밀번호를 바꾼다. 옛 토큰은 전부 죽고 새 토큰 한 쌍을 받는다."""
+    아이피 = request.client.host if request.client else "unknown"
+    # 왜 로그인 제한기를 같이 쓰는가: 현재 비밀번호 확인은 로그인과 같은 공격면이다.
+    if not login_limiter.allow(아이피):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            "시도가 너무 잦다. 잠시 뒤 다시 시도하라")
+    if 사용자.password_hash is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "구글로만 가입한 계정은 비밀번호가 없다")
+    if not verify_password(사용자.password_hash, 몸체.current_password):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "현재 비밀번호가 틀리다")
+    사용자.password_hash = hash_password(몸체.new_password)
+    session.commit()
+    _전부폐기(session, 사용자)
+    return _토큰발급(session, 사용자)
 
 
 @router.get("/me", response_model=UserOut)

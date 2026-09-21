@@ -61,7 +61,9 @@ def test_이메일은_소문자로_정규화된다():
 
 def test_액세스_토큰을_만들고_되읽는다():
     from game.security import make_access_token, read_access_token
-    assert read_access_token(make_access_token(42)) == 42
+    # 왜 튜플인가: 토큰에 버전(ver)이 실리면서 (사용자 번호, 버전)을 돌려준다.
+    assert read_access_token(make_access_token(42)) == (42, 0)
+    assert read_access_token(make_access_token(42, 3)) == (42, 3)
 
 
 def test_만료된_토큰은_거부된다():
@@ -74,7 +76,7 @@ def test_만료된_토큰은_거부된다():
 def test_유효기간은_15분이다():
     from game.security import make_access_token, read_access_token
     기준 = datetime.now(timezone.utc) - timedelta(minutes=14, seconds=30)
-    assert read_access_token(make_access_token(42, now=기준)) == 42
+    assert read_access_token(make_access_token(42, now=기준)) == (42, 0)
 
 
 def test_서명이_다르면_거부된다(monkeypatch):
@@ -137,7 +139,8 @@ def test_필수_클레임이_없는_토큰은_거부된다():
     지금 = int(datetime.now(timezone.utc).timestamp())
     온전 = {"sub": "42", "iat": 지금, "exp": 지금 + 600}
     비밀 = get_settings().jwt_secret
-    assert read_access_token(jwt.encode(온전, 비밀, algorithm=ALGORITHM)) == 42
+    # 왜 ver 없이도 통과하는가: 서버만 서명하므로 ver가 없는 토큰은 버전 0으로 읽는다.
+    assert read_access_token(jwt.encode(온전, 비밀, algorithm=ALGORITHM)) == (42, 0)
     # 왜: exp가 없으면 영원히 유효한 토큰이 된다. 서버만 서명하지만 키가 한 번
     #     새면 되돌릴 수 없으므로 세 클레임을 모두 요구한다.
     for 뺄것 in ["exp", "sub", "iat"]:

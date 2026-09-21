@@ -66,6 +66,13 @@ class RefreshIn(BaseModel):
     refresh_token: str = Field(min_length=1, max_length=512)
 
 
+class PasswordChangeIn(BaseModel):
+    """비밀번호 변경 요청. 새 비밀번호의 제약은 가입과 같다."""
+
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class TokenOut(BaseModel):
     """토큰 발급 응답. 비밀번호나 해시는 절대 담지 않는다."""
 

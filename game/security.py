@@ -55,26 +55,30 @@ def normalize_email(raw: str) -> str:
     return raw.strip().lower()
 
 
-def make_access_token(user_id: int, *, now: datetime | None = None) -> str:
-    """사용자 번호를 담은 액세스 토큰을 만든다. 기본 유효기간은 15분이다."""
+def make_access_token(user_id: int, version: int = 0, *,
+                      now: datetime | None = None) -> str:
+    """사용자 번호와 토큰 버전을 담은 액세스 토큰을 만든다. 기본 유효기간은 15분이다."""
     설정 = get_settings()
     기준 = now if now is not None else datetime.now(timezone.utc)
     페이로드 = {
         "sub": str(user_id),
+        "ver": int(version),
         "iat": int(기준.timestamp()),
         "exp": int((기준 + timedelta(minutes=설정.access_token_minutes)).timestamp()),
     }
     return jwt.encode(페이로드, 설정.jwt_secret, algorithm=ALGORITHM)
 
 
-def read_access_token(token: str) -> int:
-    """토큰을 검증하고 사용자 번호를 꺼낸다. 문제가 있으면 TokenInvalid."""
+def read_access_token(token: str) -> tuple[int, int]:
+    """토큰을 검증하고 (사용자 번호, 토큰 버전)을 꺼낸다. 문제가 있으면 TokenInvalid."""
     try:
         # 왜 세 클레임을 요구하는가: PyJWT는 exp가 없으면 만료 검사를 건너뛴다.
         #   지금은 서버만 서명하지만, 빠진 토큰을 받아 주면 영원히 유효해진다.
         페이로드 = jwt.decode(token, get_settings().jwt_secret, algorithms=[ALGORITHM],
                           options={"require": ["exp", "sub", "iat"]})
-        return int(페이로드["sub"])
+        # 왜 ver를 require에 안 넣는가: 서명은 서버만 한다. ver 없는 토큰은 버전 0으로
+        #   읽으면 되고, 그래야 손으로 만든 페이로드를 쓰는 기존 테스트가 그대로 산다.
+        return int(페이로드["sub"]), int(페이로드.get("ver", 0))
     except (jwt.InvalidTokenError, KeyError, TypeError, ValueError) as e:
         # 왜 사유를 응답에 담지 않는가: "만료됨"과 "서명 불일치"를 구분해 주면
         #   공격자에게 힌트가 된다. 하나로 합친다.

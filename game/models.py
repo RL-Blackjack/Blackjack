@@ -74,6 +74,10 @@ class User(Base):
     # 왜 nullable인가: 구글로만 가입한 사람은 비밀번호가 아예 없다.
     password_hash: Mapped[str | None] = mapped_column(String(256), nullable=True)
     google_sub: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    # 왜 버전인가: 액세스 토큰은 DB를 안 보고 검증한다. "전부 로그아웃"이나 비밀번호
+    #   변경 뒤에도 15분 동안 살아 있는 토큰을 죽이려면, 토큰에 박힌 번호와 이 칸을
+    #   비교하는 수밖에 없다. 요청마다 session.get(User)는 이미 하고 있다.
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # 왜 default가 있는가: brief의 테스트(사용자(), 구글 가입 테스트)가
     #   created_at을 넘기지 않는다. NOT NULL 제약은 그대로 두고
     #   ORM 쪽에서 가입 시각을 자동으로 채운다.
